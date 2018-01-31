@@ -53,6 +53,7 @@ get = lambda x: os.environ.get(x, '0').lower() in ['true', 'yes', 'y', '1']
 
 gtest = get('GTEST')
 cuda = get('CUDA')
+
 debug = get('DEBUG')
 matlab = get('MATLAB')
 opencv = env.GetOption('opencv') and get('OPENCV')
@@ -112,8 +113,12 @@ def addLib(name, **kwargs):
     # If pattern not provided use *.cpp as default
     patterns = kwargs.get('patterns', '*.cpp')
     kwargs['patterns'] = patterns
-
-    lib = env.AddCppLibrary(name, **kwargs)
+    
+    if 'cuda' in kwargs and kwargs['cuda']:
+    	lib = env.AddCppLibraryCuda(name, **kwargs)
+    else:    	
+    	lib = env.AddCppLibrary(name, **kwargs)
+    	
     env.Alias('xmipp-libs', lib)
 
     return lib
@@ -197,6 +202,29 @@ addLib('XmippRecons',
        libs=['hdf5', 'hdf5_cpp', 'pthread',
              'fftw3_threads',  
              'XmippData', 'XmippClassif', 'XmippBilib', 'XmippCondor', 'XmippDelaunay'])
+
+
+# Reconstruction CUDA  OJO !!!!!
+if cuda and not cuda:
+       addLib('XmippReconsCuda',
+       dirs=['libraries'],
+       patterns=['reconstruction_cuda/*.cpp'],
+       incs=bilib_incs, cuda=True,
+       libs=['pthread'])
+       
+       addLib('XmippReconsAdaptCuda',
+       dirs=['libraries'],
+       patterns=['reconstruction_adapt_cuda/*.cpp'],
+       incs=bilib_incs,
+       libs=['pthread'])
+       
+       addLib('XmippParallelAdaptCuda',
+       dirs=['libraries'],
+       patterns=['parallel_adapt_cuda/*.cpp'],
+       incs=bilib_incs,
+       libs=['pthread', 'XmippData', 'XmippClassif', 'XmippRecons', 'XmippBilib', 'XmippReconsCuda', 'XmippReconsAdaptCuda'],
+       mpi=True)
+  
 
 # Interface
 python_incs = ['#software/include/python2.7',
@@ -463,6 +491,18 @@ def addProg(progName, **kwargs):
         kwargs['mpi'] = True
         kwargs['libs'] += ['mpi', 'mpi_cxx', 'XmippParallel']
 
+    #AJ
+    if progName.startswith('cuda_'):
+        kwargs['cuda'] = True
+        #kwargs['nvcc'] = True
+        kwargs['libs'] += ['XmippReconsAdaptCuda', 'XmippReconsCuda']
+
+    if progName.startswith('mpi_cuda_'):
+        kwargs['cuda'] = True
+        #kwargs['nvcc'] = True
+        kwargs['libs'] += ['XmippReconsAdaptCuda', 'XmippReconsCuda','XmippParallelAdaptCuda']
+    #FIN AJ
+
     xmippProgName = 'xmipp_%s' % progName
 
     if progName.startswith('test_'):
@@ -526,6 +566,7 @@ for p in ['angular_break_symmetry',
           'image_assignment_tilt_pair',
           'image_common_lines',
           'image_convert',
+          'image_eliminate_empty_particles',
           'image_find_center',
           'image_header',
           'image_histogram',
@@ -740,6 +781,9 @@ if opencv:
 #    addProg('gpu_example',
 #                nvcc=True,cuda=True)
 
+#if cuda:
+#    addProg('cuda_reconstruct_fourier')
+#    addProg('mpi_cuda_reconstruct_fourier')
 
 
 #  ***********************************************************************
@@ -853,3 +897,4 @@ XmippAlias = env.Alias('xmipp', ['xmipp-libs',
 
 
 Return('XmippAlias')
+

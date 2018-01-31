@@ -160,7 +160,8 @@ class ProtParticlePicking(ProtParticles):
     def _getCoords(self, CoordClass):
         result = None
         for _, attr in self.iterOutputAttributes(CoordClass):
-            result = attr # Get the last output that is SetOfCoordinates or so
+            if not 'coordinatesDiscarded' in attr.getFileName():
+                result = attr # Get the last GOOD output that is SetOfCoordinates
         return result
 
     def getCoords(self):
@@ -1024,3 +1025,9 @@ class ProtExtractParticles(ProtParticles):
     def createOutputStep(self):
         pass # Nothing to do now
         #self._createOutput(self._getExtraPath())
+
+
+class ProtExtractParticlesPair(ProtParticles):
+    """ Base class for all extract-particles pairs protocols. Until now,
+    this protcols is not in streaming mode.
+     """
