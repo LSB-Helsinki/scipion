@@ -103,7 +103,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         form.addParam('learningRate', params.FloatParam, label="Learning rate", default=1e-3, expertLevel=params.LEVEL_ADVANCED,
                       help='Learning rate for neural network training')
         form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=3, expertLevel=params.LEVEL_ADVANCED,
-                      help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 20. The more the better'
+                      help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 10. The more the better'
                       'until a point where no gain is obtained')  
 
         form.addSection(label='testingData')
