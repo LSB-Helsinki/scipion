@@ -328,16 +328,22 @@ cython = env.addPipModule('cython', '0.22', target='Cython-0.22*', default=False
 cythongsl = env.addPipModule('cythongsl','0.2.1',
                          target='CythonGSL-0.2.1*',
                          default=False, deps=[cython])
-env.addPipModule('scikit-learn', '0.17', target='scikit_learn*',
+scikit_learn= env.addPipModule('scikit-learn', '0.17', target='scikit_learn*',
              default=False, deps=[scipy, cython])
 
-if get('CUDA'):
-    env.addPipModule('tensorflow-gpu', '1.1.0', target='tensorflow*',
-             default=False) 
-else:
-    env.addPipModule('tensorflow', '1.1.0', target='tensorflow*',
-             default=False)  
 
+if get('CUDA'):
+    url = 'https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow_gpu-1.4.0rc1-cp27-none-linux_x86_64.whl'
+    pipCmd = "python %s/pip install %s" % (env.getPythonPackagesFolder(), url) 
+    env.addPipModule('tensorflow-gpu', '1.4.0', target='tensorflow*', pipCmd=pipCmd,
+             default=False, deps=[scikit_learn]) 
+else:
+    url = 'https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.4.0rc1-cp27-none-linux_x86_64.whl'
+    pipCmd = "python %s/pip install %s" % (env.getPythonPackagesFolder(), url) 
+    env.addPipModule('tensorflow', '1.4.0', target='tensorflow*', pipCmd=pipCmd,
+             default=False, deps=[scikit_learn])
+env.addPipModule('joblib', '0.11', target='joblib*', default=False)
+env.addPipModule('tflearn', '0.3', target='tflearn*', default=False)
 
 #  ************************************************************************
 #  *                                                                      *
