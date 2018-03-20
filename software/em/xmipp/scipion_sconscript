@@ -205,26 +205,26 @@ addLib('XmippRecons',
 
 
 # Reconstruction CUDA  OJO !!!!!
-if cuda and not cuda:
+if False and cuda:
        addLib('XmippReconsCuda',
        dirs=['libraries'],
        patterns=['reconstruction_cuda/*.cpp'],
        incs=bilib_incs, cuda=True,
        libs=['pthread'])
        
-       addLib('XmippReconsAdaptCuda',
+    addLib('XmippReconsAdaptCuda',
        dirs=['libraries'],
        patterns=['reconstruction_adapt_cuda/*.cpp'],
        incs=bilib_incs,
        libs=['pthread'])
        
-       addLib('XmippParallelAdaptCuda',
+    addLib('XmippParallelAdaptCuda',
        dirs=['libraries'],
        patterns=['parallel_adapt_cuda/*.cpp'],
        incs=bilib_incs,
        libs=['pthread', 'XmippData', 'XmippClassif', 'XmippRecons', 'XmippBilib', 'XmippReconsCuda', 'XmippReconsAdaptCuda'],
        mpi=True)
-  
+
 
 # Interface
 python_incs = ['#software/include/python2.7',
@@ -541,9 +541,7 @@ for p in ['angular_break_symmetry',
           'classify_extract_features',
           'classify_first_split',
           'classify_kerdensom',
-		
           'coordinates_noisy_zones_filter',
-
 	        'ctf_correct_wiener2d',
           'ctf_correct_wiener3d',
           'ctf_correct_idr',
@@ -645,7 +643,7 @@ for p in ['angular_break_symmetry',
           'transform_randomize_phases',
           'transform_range_adjust',
           'transform_symmetrize',
-          'transform_threshold',
+	      'transform_threshold',
           'transform_window',
           'tomo_align_dual_tilt_series',
           'tomo_align_refinement',
@@ -772,6 +770,7 @@ if opencv:
     addProg('mpi_volume_homogenizer',
             libs=opencvLibs,
             deps=['opencv'])
+<<<<<<< HEAD
 #    if cuda: # also the gpu version
 #        opencvLibs.append('opencv_gpu')
 #        addProg('movie_optical_alignment_gpu',
@@ -786,6 +785,19 @@ if opencv:
 #if cuda:
 #    addProg('cuda_reconstruct_fourier')
 #    addProg('mpi_cuda_reconstruct_fourier')
+=======
+    if cuda: # also the gpu version
+        opencvLibs.append('opencv_gpu')
+        addProg('movie_optical_alignment_gpu',
+                libs=opencvLibs,
+                deps=['opencv'], cuda=True)
+
+
+if cuda:
+    addProg('cuda_correlation')
+    addProg('cuda_reconstruct_fourier')
+    addProg('mpi_cuda_reconstruct_fourier')
+>>>>>>> fix_cropResize
 
 
 #  ***********************************************************************
@@ -899,4 +911,3 @@ XmippAlias = env.Alias('xmipp', ['xmipp-libs',
 
 
 Return('XmippAlias')
-

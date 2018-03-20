@@ -289,14 +289,9 @@ def setXmippAttributes(obj, objRow, *labels):
     and the datatype will be set correctly.
     """
     for label in labels:
-        setSingleXmippAttribute(obj,label, objRow.getValueAsObject(label))
-        #        setattr(obj, '_xmipp_%s' % xmipp.label2Str(label),
-        #        objRow.getValueAsObject(label))
+        setattr(obj, '_xmipp_%s' % xmipp.label2Str(label),
+                objRow.getValueAsObject(label))
 
-def setSingleXmippAttribute(obj, label, value):
-    """ Set an attribute of an object following an Xmipp label pattern
-    """
-    setattr(obj, '_xmipp_%s' % xmipp.label2Str(label), value)
 
 def rowFromMd(md, objId):
     row = XmippMdRow()
@@ -963,11 +958,19 @@ def setOfImagesToMd(imgSet, md, imgToFunc, **kwargs):
     if 'alignType' not in kwargs:
         kwargs['alignType'] = imgSet.getAlignment()
 
-    for img in imgSet:
-        objId = md.addObject()
-        imgRow = XmippMdRow()
-        imgToFunc(img, imgRow, **kwargs)
-        imgRow.writeToMd(md, objId)
+    if 'firstId' in kwargs:
+        firstId = kwargs['firstId']
+        for img in imgSet.iterItems(where="id>%d"% firstId):
+            objId = md.addObject()
+            imgRow = XmippMdRow()
+            imgToFunc(img, imgRow, **kwargs)
+            imgRow.writeToMd(md, objId)
+    else:
+        for img in imgSet:
+            objId = md.addObject()
+            imgRow = XmippMdRow()
+            imgToFunc(img, imgRow, **kwargs)
+            imgRow.writeToMd(md, objId)
 
 
 def readAnglesFromMicrographs(micFile, anglesSet):

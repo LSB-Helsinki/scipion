@@ -493,12 +493,10 @@ class Environment:
         t = self.addTarget(name, default=default)
 
         # Add the dependencies
-        self._addTargetDeps(t, ['pip', 'python'] + deps)
-
+        self._addTargetDeps(t, ['pip','python'] + deps)
         t.addCommand(pipCmd,
                      final=True,
                      targets=self.getPythonPackagesFolder() + '/' + target)
-
         return t
     def addModule(self, name, **kwargs):
         """Add a new module to our built Python .

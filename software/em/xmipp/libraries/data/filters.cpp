@@ -767,13 +767,14 @@ void varianceFilter(MultidimArray<double> &I, int kernelSize, bool relative)
     kernel.resize(kernelSize,kernelSize);
     kernel.setXmippOrigin();
 
+    // std::cout << " Creating the variance matrix " << std::endl;
     MultidimArray<double> mVar(YSIZE(I),XSIZE(I));
     mVar.setXmippOrigin();
     double stdKernel, varKernel, avgKernel, min_val, max_val;
     double stdImg, avgImg, min_im, max_im;
     int x0, y0, xF, yF;
 
-    I.computeStats(avgImg, stdImg, min_im, max_im);    
+    // I.computeStats(avgImg, stdImg, min_im, max_im);    
     
     for (int i=kernelSize_2; i<=(int)YSIZE(I)-kernelSize_2; i+=kernelSize_2)
         for (int j=kernelSize_2; j<=(int)XSIZE(I)-kernelSize_2; j+=kernelSize_2)
@@ -812,16 +813,37 @@ void varianceFilter(MultidimArray<double> &I, int kernelSize, bool relative)
         mVar = mVar/avgVar;
     }
 
-    // Working in a auxilary windows to avoid borders bad defined
-    MultidimArray<double> mVarAux(YSIZE(I)-kernelSize,XSIZE(I)-kernelSize);
-    mVarAux.setXmippOrigin();
-    mVar.window(mVarAux,STARTINGY(mVar)+kernelSize_2, STARTINGX(mVar)+kernelSize_2,
-                       FINISHINGY(mVar)-kernelSize_2, FINISHINGX(mVar)-kernelSize_2);
+    I = mVar;
 
-    // Returning to the previous windows size
-    I.initZeros(mVar);
-    mVarAux.window(I, STARTINGY(mVar), STARTINGX(mVar),
-                     FINISHINGY(mVar), FINISHINGX(mVar));
+    // filling the borders with the nearest variance value
+    // the corners only are filled once (with Ycoord)
+    for (int i=0; i<YSIZE(I); ++i)
+        for (int j=0; j<kernelSize; j++)
+        {
+            if (i<kernelSize)
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, kernelSize, kernelSize);
+            else if (i>YSIZE(I)-kernelSize)
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, YSIZE(I)-kernelSize, kernelSize);
+            else
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, i, kernelSize);
+        }
+    for (int i=0; i<YSIZE(I); ++i)
+        for (int j=XSIZE(I)-kernelSize; j<XSIZE(I); j++)
+        {
+            if (i<kernelSize)
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, kernelSize, XSIZE(I)-kernelSize);
+            else if (i>YSIZE(I)-kernelSize)
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, YSIZE(I)-kernelSize, XSIZE(I)-kernelSize);
+            else
+                DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, i, XSIZE(I)-kernelSize);
+        }
+    for (int j=kernelSize; j<XSIZE(I)-kernelSize; ++j)
+        for (int i=0; i<kernelSize; i++)
+            DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, kernelSize, j);
+    for (int j=kernelSize; j<XSIZE(I)-kernelSize; ++j)
+        for (int i=YSIZE(I)-kernelSize; i<YSIZE(I); i++)
+            DIRECT_A2D_ELEM(I, i, j) = DIRECT_A2D_ELEM(mVar, YSIZE(I)-kernelSize, j);
+    
 }
 
 /* Noise filter (returns a binary mask where both variance and mean are high)*/
@@ -919,6 +941,8 @@ double giniCoeff(MultidimArray<double> &I, int varKernelSize)
 {
     MultidimArray<double> im = I;
 
+    // std::cout << " - Starting fft filtering " << std::endl;
+
     FourierFilter filter;
     filter.FilterShape = REALGAUSSIAN;
     filter.FilterBand = LOWPASS;
@@ -928,9 +952,11 @@ double giniCoeff(MultidimArray<double> &I, int varKernelSize)
     // Image<double> imG(im);
     // imG.write("I_Gauss.mrc");
 
+    // std::cout << " - Calling varianceFilter() " << std::endl;
     varianceFilter(I, varKernelSize, true);
     im = I;
 
+    // std::cout << " - Starting 2nd fft filtering " << std::endl;
     filter.w1 = varKernelSize/8;
     filter.applyMaskSpace(I);
 
@@ -943,10 +969,12 @@ double giniCoeff(MultidimArray<double> &I, int varKernelSize)
     // Image<double> imGVN(im);
     // imGVN.write("I_Gauss_Var_Norm.mrc");
    
+    // std::cout << " - Starting histogram analysis " << std::endl;
     Histogram1D hist;
     hist.clear();
     compute_hist(im, hist, 256);
 
+    // std::cout << " - Computing Gini coeff " << std::endl;
     MultidimArray<double> sortedList=hist;
     hist.sort(sortedList);
     double height=0, area=0;

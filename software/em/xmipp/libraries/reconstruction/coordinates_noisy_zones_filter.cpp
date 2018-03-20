@@ -31,7 +31,7 @@ void ProgCoordinatesNoisyZonesFilter::defineParams()
     addParamsLine(" --pos <coordinates> : Input coordinates");
     addParamsLine(" --mic <micrograph> : Reference volume");
     addParamsLine(" [--patchSize <n=50>] : Patch size for the variance filter");
-    addParamsLine(" [-o <coordinates=pos>] : Output coordinates (if not passed, "
+    addParamsLine(" [-o <coordinates>] : Output coordinates (if not passed, "
                                                    "the input is overwritten)");
 }
 
@@ -39,8 +39,9 @@ void ProgCoordinatesNoisyZonesFilter::readParams()
 {
 	fnInCoord = getParam("--pos");
 	fnInMic = getParam("--mic");
-    fnOut = getParam("-o");
-    if (fnOut=="pos")
+    if (checkParam("-o"))
+        fnOut = getParam("-o");
+    else
         fnOut = fnInCoord;
 	patchSize = getIntParam("--patchSize");
 }
@@ -69,24 +70,24 @@ void ProgCoordinatesNoisyZonesFilter::run()
 	Image<double> im;
 	im.read(fnInMic);
 
+    // std::cout << " - Starting normalization " << std::endl;
     MultidimArray<double> &matrixMic = im();
-
     matrixMic.selfNormalizeInterval();
-    Image<double> normMic(matrixMic);
-    normMic.write(fnInCoord.withoutExtension()+"_normalized.mrc");
-
-
-    // getting the gini coefficient of the Micrograph whereas applaying a 
-    // variance filter to the matrixMic (and filtered to smooth the result) 
-    double giniV = giniCoeff(matrixMic, patchSize);
-
-    Image<double> varMic(matrixMic);
-    varMic.write(fnInCoord.withoutExtension()+"_variance.mrc");
 
     if (verbose>1)
     {
-        Image<double> imVar(matrixMic);
-        imVar.write(fnInCoord.withoutExtension()+"_varianceFilter.mrc");
+        Image<double> aux(matrixMic);
+        aux.write(fnInCoord.withoutExtension()+"_normalized.mrc");
+    }
+
+    // giniCoeff(Image, patchSize) returns the giniCoeff of the Image and
+    //   applies a variance filter to the Image with a patchSize 
+    double giniV = giniCoeff(matrixMic, patchSize);
+
+    if (verbose>1)
+    {
+        Image<double> aux(matrixMic);
+        aux.write(fnInCoord.withoutExtension()+"_varianceFilter.mrc");
         std::cout << " Gini Coeff: " << giniV << std::endl
                   << "(" << fnInMic << ")" << std::endl;
     }
