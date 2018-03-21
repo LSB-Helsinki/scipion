@@ -488,7 +488,7 @@ class Environment:
             version: module version is mandatory to prevent undesired updates.
             default: True if this module is build by default.
         """
-	pipCmd = pipCmd or 'python %s/pip install %s==%s' % (self.getPythonPackagesFolder(), name, version)
+        pipCmd = pipCmd or 'python %s/pip install %s==%s' % (self.getPythonPackagesFolder(), name, version)
         target = name if target is None else target
         t = self.addTarget(name, default=default)
 

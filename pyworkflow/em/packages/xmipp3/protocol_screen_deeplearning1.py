@@ -75,7 +75,6 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                             label="Weight of negative train particles %d"%num, 
                             help='Select the weigth for the negative set of particles.')
 
-
         form.addParam('predictSetOfParticles', params.PointerParam, label="Set of putative particles to predict", 
                       pointerClass='SetOfParticles',
                       help='Select the set of putative particles particles to classify.')
@@ -88,18 +87,19 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       'Sometimes convergency seems to be reached, but after time, improvement can still happen. '
                       'Not recommended for very small data sets (<100 true particles)')
 
+        use_cuda=True
         if 'CUDA' in os.environ and not os.environ['CUDA']=="False":
 
             form.addParam('gpuToUse', params.IntParam, default='0',
                           label='Which GPU to use:',
                           help='Currently just one GPU will be use, by '
-                         'default GPU number 0 You can override the default '
+                               'default GPU number 0 You can override the default '
                                'allocation by providing other GPU number, p.e. 2')
         else:
-            form.addParallelSection(threads=8, mpi=0)
+            use_cuda=False
 
         form.addParam('nEpochs', params.FloatParam, label="Number of epochs", default=10.0, expertLevel=params.LEVEL_ADVANCED,
-                      help='Number of epochs for neural network training.')  
+                      help='Number of epochs for neural network training.')
         form.addParam('learningRate', params.FloatParam, label="Learning rate", default=1e-3, expertLevel=params.LEVEL_ADVANCED,
                       help='Learning rate for neural network training')
         form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=3, expertLevel=params.LEVEL_ADVANCED,
@@ -120,6 +120,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       pointerClass='SetOfParticles',
                       help='Select the set of ground false positive particles.')
 
+        if not use_cuda: form.addParallelSection(threads=8, mpi=0)
     
     #--------------------------- INSERT steps functions --------------------------------------------
     def _insertAllSteps(self):
@@ -161,7 +162,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
       
         from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron, tf_intarnalError
         
-        if self.gpuToUse:
+        if hasattr(self, 'gpuToUse'):
             updateEnviron( self.gpuToUse.get() )
             numberOfThreads=None
         else:
