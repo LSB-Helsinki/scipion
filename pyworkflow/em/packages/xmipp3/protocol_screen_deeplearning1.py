@@ -37,7 +37,7 @@ from pyworkflow.em.packages.xmipp3.convert import writeSetOfParticles, setXmippA
 class XmippProtScreenDeepLearning1(ProtProcessParticles):
     """ Protocol for screening particles using deep learning. """
     _label = 'screen deep learning 1'
-    
+
     #--------------------------- DEFINE param functions --------------------------------------------
     def _defineParams(self, form):
         form.addSection(label='Input')
@@ -51,8 +51,8 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       label='Select previous run',
                       help='Select a previous run to continue from.')
 
-        form.addParam('inPosSetOfParticles', params.PointerParam, label="Consensus particles (mostly true particles)", 
-                      pointerClass='SetOfParticles', 
+        form.addParam('inPosSetOfParticles', params.PointerParam, label="Consensus particles (mostly true particles)",
+                      pointerClass='SetOfParticles',
                       help='Select the intersection set of particles (mostly true particles).\n'
                'Recomended set: good Z-score AND consensus of several pickers')
 
@@ -65,17 +65,17 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                    '2) Bad Z-score from multiple picker OR consensus\n'
                    '3) Bad Z-score from multiple picker picked just by one\n')
         for num in range( 1, 5):
-            form.addParam('negativeSet_%d'%num, params.PointerParam, 
+            form.addParam('negativeSet_%d'%num, params.PointerParam,
                             condition='numberOfNegativeSets<=0 or numberOfNegativeSets >=%d'%num,
-                            label="Set of negative train particles %d"%num, 
+                            label="Set of negative train particles %d"%num,
                             pointerClass='SetOfParticles',
                             help='Select the set of negative particles for training.')
             form.addParam('inNegWeight_%d'%num, params.IntParam, default='1',
                             condition='numberOfNegativeSets<=0 or numberOfNegativeSets >=%d'%num,
-                            label="Weight of negative train particles %d"%num, 
+                            label="Weight of negative train particles %d"%num,
                             help='Select the weigth for the negative set of particles.')
 
-        form.addParam('predictSetOfParticles', params.PointerParam, label="Set of putative particles to predict", 
+        form.addParam('predictSetOfParticles', params.PointerParam, label="Set of putative particles to predict",
                       pointerClass='SetOfParticles',
                       help='Select the set of putative particles particles to classify.')
 
@@ -104,7 +104,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       help='Learning rate for neural network training')
         form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=3, expertLevel=params.LEVEL_ADVANCED,
                       help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 10. The more the better'
-                      'until a point where no gain is obtained')  
+                      'until a point where no gain is obtained')
 
         form.addSection(label='testingData')
         form.addParam('doTesting', params.BooleanParam, default=False,
@@ -112,16 +112,16 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       help='If you set to *Yes*, you should select a testing positive set '
                       'and a testing negative set')
         form.addParam('testPosSetOfParticles', params.PointerParam, condition='doTesting',
-                      label="Set of positive test particles", 
+                      label="Set of positive test particles",
                       pointerClass='SetOfParticles',
                       help='Select the set of ground true positive particles.')
         form.addParam('testNegSetOfParticles', params.PointerParam, condition='doTesting',
-                      label="Set of negative test particles", 
+                      label="Set of negative test particles",
                       pointerClass='SetOfParticles',
                       help='Select the set of ground false positive particles.')
 
         if not use_cuda: form.addParallelSection(threads=8, mpi=0)
-    
+
     #--------------------------- INSERT steps functions --------------------------------------------
     def _insertAllSteps(self):
         '''
@@ -136,21 +136,21 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         setPredict={self._getExtraPath("predictSetOfParticles.xmd"): (self.predictSetOfParticles.get(),1) }
         setTestPos={self._getExtraPath("testTrueParticlesSet.xmd"):  (self.testPosSetOfParticles.get(),1)}
         setTestNeg={self._getExtraPath("testFalseParticlesSet.xmd"): (self.testNegSetOfParticles.get(),1)}
-  
-        self._insertFunctionStep('convertInputStep', posSetTrainDict, negSetTrainDict, setPredict, setTestPos, setTestNeg) 
-        self._insertFunctionStep('train',  posSetTrainDict, negSetTrainDict, setTestPos, setTestNeg, self.learningRate.get()) 
+
+        self._insertFunctionStep('convertInputStep', posSetTrainDict, negSetTrainDict, setPredict, setTestPos, setTestNeg)
+        self._insertFunctionStep('train',  posSetTrainDict, negSetTrainDict, setTestPos, setTestNeg, self.learningRate.get())
         self._insertFunctionStep('predict',setTestPos,setTestNeg, setPredict, posSetTrainDict, negSetTrainDict)
         self._insertFunctionStep('createOutputStep')
-        
-    #--------------------------- STEPS functions --------------------------------------------   
+
+    #--------------------------- STEPS functions --------------------------------------------
     def convertInputStep(self, *dataDicts):
         for dataDict in dataDicts:
           for fnameParticles in sorted(dataDict):
             print(fnameParticles, dataDict[fnameParticles][0], not dataDict[fnameParticles][0] is None)
             if not dataDict[fnameParticles][0] is None:
                 writeSetOfParticles(dataDict[fnameParticles][0], fnameParticles)
-            
-    def train(self, posTrainDict, negTrainDict, posTestDict, posTestNeg, learningRate):
+
+    def train(self, posTrainDict, negTrainDict, posTestDict, negTestDict, learningRate):
         '''
         posTrainDict, negTrainDict, posTestDict, posTestNeg: { fname: [(SetOfParticles, weight:int)]}
         learningRate: float
@@ -159,13 +159,14 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             previousRun=self.continueRun.get()
             print( previousRun._getExtraPath('nnetData') )
             copyTree(previousRun._getExtraPath('nnetData'),self._getExtraPath('nnetData'))
-      
+
         from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron, tf_intarnalError
-        
+
         if hasattr(self, 'gpuToUse'):
             updateEnviron( self.gpuToUse.get() )
             numberOfThreads=None
         else:
+	    updateEnviron(None)
             numberOfThreads=self.numberOfThreads.get()
 
         trainDataManager= DataManager( posSetDict= posTrainDict,
@@ -182,7 +183,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             for i in range(numModels):
                 print("Training model %d/%d"%((i+1), numModels))
                 nnet = DeepTFSupervised(rootPath=self._getExtraPath("nnetData"), modelNum=i)
-                try: 
+                try:
                     nnet.createNet(trainDataManager.shape[0], trainDataManager.shape[1], trainDataManager.shape[2], trainDataManager.nTrue)
                     nnet.startSessionAndInitialize(numberOfThreads)
                 except tf_intarnalError as e:
@@ -193,7 +194,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                 nnet.trainNet(numberOfBatches, trainDataManager, learningRate, testDataManager, self.auto_stopping.get())
                 nnet.close(saveModel= False) #Models will be automatically saved during training, so True no needed
         #        self.predict( testPosSetOfParticles, testNegSetOfParticles, inPosSetOfParticles, inNegSetOfParticles)
-        #        raise ValueError("Debug mode")
+#                raise ValueError("Debug mode")
                 del nnet
 
 
@@ -201,11 +202,11 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron
         import numpy as np
         from sklearn.metrics import accuracy_score, roc_auc_score
-
-        if self.gpuToUse:
+        if hasattr(self, 'gpuToUse'):
             updateEnviron( self.gpuToUse.get() )
             numberOfThreads=None
         else:
+            updateEnviron(None)
             numberOfThreads=self.numberOfThreads.get()
 
         trainDataManager= DataManager( posSetDict= posTrainDict,
@@ -293,15 +294,15 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         self._defineOutputs(outputParticles=partSet)
         self._defineSourceRelation(imgSet, partSet)
 
-    
+
     #--------------------------- INFO functions --------------------------------------------
     def _summary(self):
         summary = []
         return summary
-    
+
     def _methods(self):
         pass
-    
+
     #--------------------------- UTILS functions --------------------------------------------
     def _updateParticle(self, item, row):
         setXmippAttributes(item, row, md.MDL_ZSCORE_DEEPLEARNING1)
