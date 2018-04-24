@@ -362,7 +362,7 @@ if get('CUDA'):
 else:
     tensorflowVars = 'export TF_NEED_CUDA=0'
     tensorflowFlags = ''
-#env.addPipModule('tflearn', '0.3', target='tflearn*', default=False)
+
 tensorflow = env.addLibrary(
     'tensorflow',
     tar='tensorflow-1.1.tgz', # -mavx -msse4.2 -msse4.1 -msse3-k
@@ -388,7 +388,7 @@ tensorflow = env.addLibrary(
 #    pipCmd = "python %s/pip install %s" % (env.getPythonPackagesFolder(), url) 
 #    env.addPipModule('tensorflow', '1.4.0', target='tensorflow*', pipCmd=pipCmd,
 #             default=False, deps=[scikit_learn])
-#env.addPipModule('tflearn', '0.3', target='tflearn*', default=False)
+env.addPipModule('tflearn', '0.3', target='tflearn*', default=False)
 
 #  ************************************************************************
 #  *                                                                      *
