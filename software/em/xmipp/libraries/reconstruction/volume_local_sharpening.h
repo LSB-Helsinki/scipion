@@ -53,7 +53,7 @@ public:
 	FileName fnOut, fnVol, fnRes;
 
 	/** sampling rate, minimum resolution, and maximum resolution */
-	double sampling, maxRes, minRes, lambda, maxFreq, minFreq;
+	double sampling, maxRes, minRes, lambda, maxFreq, minFreq, desv_Vorig;
 	int Niter, Nthread;
 
 public:
@@ -72,6 +72,9 @@ public:
 
       void maxMinResolution(MultidimArray<double> &resVol,
 			double &maxRes, double &minRes);
+
+      void computeAvgStdev_within_binary_mask(const MultidimArray< double >&resVol,
+      										const MultidimArray< double >&vol, double &stddev );
 
     void localfiltering(MultidimArray< std::complex<double> > &myfftV,
     										MultidimArray<double> &localfilteredVol,

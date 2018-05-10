@@ -102,16 +102,16 @@ void ProgLocSharpening::produceSideInfo()
     resolutionVolume.read(fnRes);
 
     resVol = resolutionVolume();
-    mask.initZeros(resVol);
+//    mask.initZeros(resVol);
 
         maxMinResolution(resVol, maxRes, minRes);
         std::cout << "maxRes = " << maxRes << "  minRes = " << minRes << std::endl;
 
     	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(resVol)
     	{
-    		if (DIRECT_MULTIDIM_ELEM(resVol, n) >= minRes)
-    			DIRECT_MULTIDIM_ELEM(mask, n) = 1;
-    		if ((DIRECT_MULTIDIM_ELEM(resVol, n) < 2*sampling))// && (DIRECT_MULTIDIM_ELEM(resVol, n)>0))
+//    		if (DIRECT_MULTIDIM_ELEM(resVol, n) >= minRes)
+//    			DIRECT_MULTIDIM_ELEM(mask, n) = 1;
+    		if ((DIRECT_MULTIDIM_ELEM(resVol, n) < 2*sampling) && (DIRECT_MULTIDIM_ELEM(resVol, n)>0))
     		{
     			DIRECT_MULTIDIM_ELEM(resVol, n) = 2*sampling;
     		}
@@ -124,6 +124,9 @@ void ProgLocSharpening::produceSideInfo()
 //        Filter.FilterBand=LOWPASS;
 //        Filter.w1=1;
 //        Filter.apply(resVol);
+
+        computeAvgStdev_within_binary_mask(resVol, Vorig, desv_Vorig);
+        std::cout << "desv_Vorig = " << desv_Vorig << std::endl;
 
 }
 
@@ -145,6 +148,34 @@ void ProgLocSharpening::maxMinResolution(MultidimArray<double> &resVol,
 
         maxRes = lastMaxRes;
         minRes = lastMinRes;
+}
+
+void ProgLocSharpening::computeAvgStdev_within_binary_mask(const MultidimArray< double >&resVol,
+										const MultidimArray< double >&vol, double &stddev )
+{
+    SPEED_UP_tempsInt;
+    double sum1 = 0;
+    double sum2 = 0;
+    int N = 0;
+    double avg=0;
+
+    FOR_ALL_ELEMENTS_IN_COMMON_IN_ARRAY3D(resVol, vol)
+    {
+        if (A3D_ELEM(resVol, k, i, j) > 2*sampling)
+        {
+            ++N;
+            double aux=A3D_ELEM(vol, k, i, j);
+            sum1 += aux;
+            sum2 += aux*aux;
+        }
+    }
+
+    // average and standard deviation
+      avg  = sum1 / (double) N;
+    if (N > 1)
+      stddev = sqrt(fabs(sum2 / N - avg * avg) * N / (N - 1));
+    else
+        stddev = 0;
 }
 
 void ProgLocSharpening::bandPassFilterFunction(const MultidimArray< std::complex<double> > &myfftV,
@@ -225,19 +256,16 @@ void ProgLocSharpening::localfiltering(MultidimArray< std::complex<double> > &my
                 FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(filteredVol)
                 {
 
-	                	double res_map = DIRECT_MULTIDIM_ELEM(resVol, n);//+1e-38;
-	                    double freq_map = sampling/res_map;
-
-	                   if (DIRECT_MULTIDIM_ELEM(mask, n) == 0)
+	                   if (DIRECT_MULTIDIM_ELEM(resVol, n) < 2*sampling)
 	                	{
 	                	   DIRECT_MULTIDIM_ELEM(filteredVol, n)=0;
 	                	}
 	                   else
 	                	   {
-
 //                	 if ((res<res_map+3) && (res>res_map-3))
 //                	 	 {
-
+		                 double res_map = DIRECT_MULTIDIM_ELEM(resVol, n);//+1e-38;
+		                 //double freq_map = sampling/res_map;
                 		 //DIRECT_MULTIDIM_ELEM(weight, n) = (exp(-10*(freq-freq_map)*(freq-freq_map)));
 	                     DIRECT_MULTIDIM_ELEM(weight, n) = (exp(-0.025*(res-res_map)*(res-res_map)));
                 		 DIRECT_MULTIDIM_ELEM(filteredVol, n) *= DIRECT_MULTIDIM_ELEM(weight, n);
@@ -345,18 +373,18 @@ void ProgLocSharpening::run()
                 	bool1=2;
                     std::cout << "-------------la resta es menor que 1 para iter  ----- " << i << std::endl;
                 }
-                if ((subst<0.5)&&(bool2==1)&&(i>2))
-                {
-                	bool2=2;
-                    std::cout << "-------------la resta es menor que 0.5 para iter  ----- " << i << std::endl;
-                }
+//                if ((subst<0.5)&&(bool2==1)&&(i>2))
+//                {
+//                	bool2=2;
+//                    std::cout << "-------------la resta es menor que 0.5 para iter  ----- " << i << std::endl;
+//                }
 
                 lastnorm=norm;
                 lastporc=porc;
 
                 if (i==1 && lambda==1)
                 {
-                	lambda=(normOrig/norm)/6;
+                	lambda=(normOrig/norm)/10;
                 }
                	std::cout << "iteration "<< i << "  lambda  " << lambda << std::endl;
 
@@ -383,17 +411,35 @@ void ProgLocSharpening::run()
         			                     lambda*DIRECT_MULTIDIM_ELEM(filteredVol,n);
                 }
 
-                //Image<double> filteredvolume;
-                filteredvolume = sharpenedMap;
-                filteredvolume.write(formatString("sharpenedMapD_%i.vol", i));
-                filteredvolume.clear();
+//                //Image<double> filteredvolume;
+//                filteredvolume = sharpenedMap;
+//                filteredvolume.write(formatString("sharpenedMapD_%i.vol", i));
+//                filteredvolume.clear();
 
+        		double desv_sharp=0;
+                computeAvgStdev_within_binary_mask(resVol, sharpenedMap, desv_sharp);
+                std::cout << "desv_sharp = " << desv_sharp << std::endl;
+
+//        		FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(sharpenedMap)
+//        		{
+//        			if (DIRECT_MULTIDIM_ELEM(resVol,n)>2*sampling)
+//        				DIRECT_MULTIDIM_ELEM(sharpenedMap,n)*=(desv_Vorig/desv_sharp);
+//        		}
 
                 filteredVol = sharpenedMap;
+
+
+                if (bool1==2)
+                {
+					Image<double> filteredvolume;
+					filteredvolume() = sharpenedMap;
+					filteredvolume.write(fnOut);
+					break;
+                }
         }
-        Image<double> filteredvolume;
-        filteredvolume() = sharpenedMap;
-        filteredvolume.write(fnOut);
+//        Image<double> filteredvolume;
+//        filteredvolume() = sharpenedMap;
+//        filteredvolume.write(fnOut);
 
 }
 

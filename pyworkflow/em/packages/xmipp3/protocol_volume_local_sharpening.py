@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # **************************************************************************
 # *
-# * Authors:     Erney Ramirez Aportela (jramirez@cnb.csic.es)
+# * Authors:     Erney Ramirez Aportela (eramirez@cnb.csic.es)
 # *
 # * Unidad de  Bioinformatica of Centro Nacional de Biotecnologia , CSIC
 # *
@@ -41,7 +41,7 @@ CHIMERA_RESOLUTION_VOL = 'MG_Chimera_resolution.vol'
 
 class XmippProtLocSharp(ProtAnalysis3D):
     """    
-    Given a map the protocol assigns local resolutions to each voxel of the map.
+    Given a resolution map the protocol calculate the sharpened map.
     """
     _label = 'local Sharpening'
     _lastUpdateVersion = VERSION_1_1
@@ -56,6 +56,10 @@ class XmippProtLocSharp(ProtAnalysis3D):
     def _defineParams(self, form):
         form.addSection(label='Input')
 
+        form.addParam('sharpSplitVolumes', BooleanParam, default=False,
+                      label="Sharpening for half volumes?",
+                      help='In addition to the main volume it makes sharpening for half volumes.')         
+        
         form.addParam('inputVolume', PointerParam, pointerClass='Volume',
                       label="Input Map", important=True,
                       help='Select a volume for sharpening.')
@@ -69,7 +73,12 @@ class XmippProtLocSharp(ProtAnalysis3D):
                       label="Iterations",
                       help='Number of iterations.')
         
-        form.addParam('const', FloatParam, default=5, 
+        form.addParam('threads', IntParam, default=1, 
+              expertLevel=LEVEL_ADVANCED,
+              label="Threads",
+              help='Number of threads.')
+        
+        form.addParam('const', FloatParam, default=1, 
                       expertLevel=LEVEL_ADVANCED,
                       label="lambda",
                       help='Regularization Param.')
@@ -97,25 +106,51 @@ class XmippProtLocSharp(ProtAnalysis3D):
         if (extRes == '.mrc') or (extRes == '.map'):
             self.resFn = self.resFn + ':mrc'
             
+        if self.sharpSplitVolumes.get() is True:
+             self.vol1Fn, self.vol2Fn = self.inputMap.get().getHalfMaps()
+             extVol1 = getExt(self.vol1Fn)
+             extVol2 = getExt(self.vol2Fn)   
+             if (extVol1 == '.mrc') or (extVol1 == '.map'):
+                 self.vol1Fn = self.vol1Fn + ':mrc'    
+             if (extVol2 == '.mrc') or (extVol2 == '.map'):
+                 self.vol2Fn = self.vol2Fn + ':mrc'       
+             
     def  sharpenStep(self):   
            
-        params = ' --vol %s' % self.volFn
-        params += ' --resolution_map %s' % self.resFn
+        #params = ' --vol %s' % self.volFn
+        params = ' --resolution_map %s' % self.resFn
         params += ' --sampling %f' % self.inputVolume.get().getSamplingRate()
-        params += ' -l %f' % self.const
-        params += ' -n %i' % self.iterations
-        params += ' -o %s' % self._getExtraPath('filtered.vol')
+        params += ' -i %i' % self.iterations
+        if (self.threads!=1):
+             params += ' -n %i' % self.threads        
+        if (self.const!=1):
+             params += ' -l %f' % self.const
+        #params += ' -o %s' % self._getExtraPath('sharpenedMap.vol')
         
-        self.runJob('xmipp_volume_local_sharpening', params)
+        self.runJob("xmipp_volume_local_sharpening  --vol %s  -o %s"
+                    %(self.volFn, self._getExtraPath('sharpenedMap.vol')), params)
+        
+        if self.sharpSplitVolumes:
+             self.runJob("xmipp_volume_local_sharpening  --vol %s  -o %s"
+                    %(self.vol1Fn, self._getExtraPath('sharpenedMap_Half1.vol')), params) 
+             self.runJob("xmipp_volume_local_sharpening  --vol %s  -o %s"
+                    %(self.vol2Fn, self._getExtraPath('sharpenedMap_Half2.vol')), params) 
 
 
     def createOutputStep(self):
         volume=Volume()
-        volume.setFileName(self._getExtraPath('filtered.vol'))
+        volume.setFileName(self._getExtraPath('sharpenedMap.vol'))
         volume.setSamplingRate(self.inputVolume.get().getSamplingRate())
-#         readSetOfVolumes(volume_path, self.volumesSet)
+
         self._defineOutputs(sharpened_map=volume)
         self._defineSourceRelation(self.inputVolume, volume)
+        
+        if self.sharpSplitVolumes:
+            half1 = self._getExtraPath('sharpenedMap_Half1.vol')
+            half2 = self._getExtraPath('sharpenedMap_Half2.vol')
+            vol.setHalfMaps([half1, half2])   
+            self._defineOutputs(outputVol=volume)
+            self._defineSourceRelation(self.inputVolume, vol)             
             
 
 
@@ -130,9 +165,9 @@ class XmippProtLocSharp(ProtAnalysis3D):
     
     def _summary(self):
         summary = []
-        summary.append("Highest resolution jejejeje")
+        summary.append("HDsharpenedMap")
         return summary
 
     def _citations(self):
-        return ['Vilas2017']
+        return ['Ramirez-Aportela2018']
 
