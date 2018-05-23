@@ -106,19 +106,20 @@ void ProgSameEnergy::produceSideInfo()
 
 	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(resVol)
 	{
-		if (DIRECT_MULTIDIM_ELEM(resVol, n) < 2*sampling)
+
+		if ((DIRECT_MULTIDIM_ELEM(resVol, n) < 2*sampling) && (DIRECT_MULTIDIM_ELEM(resVol, n)>0))
+		{
 			DIRECT_MULTIDIM_ELEM(resVol, n) = 2*sampling;
-		else
-			DIRECT_MULTIDIM_ELEM(mask, n) = 1;
+		}
 	}
 
 	resVol.setXmippOrigin();
 
-	FourierFilter Filter;
-	Filter.FilterShape=REALGAUSSIAN;
-	Filter.FilterBand=LOWPASS;
-	Filter.w1=1;
-	Filter.apply(resVol);
+//	FourierFilter Filter;
+//	Filter.FilterShape=REALGAUSSIAN;
+//	Filter.FilterBand=LOWPASS;
+//	Filter.w1=1;
+//	Filter.apply(resVol);
 
 }
 
@@ -166,11 +167,11 @@ void ProgSameEnergy::sameEnergy(MultidimArray<double> Vorig,
 	{
 		double res = sampling/freq;
 
-        DIGFREQ2FFT_IDX(freq, ZSIZE(fftV), idx);
+        DIGFREQ2FFT_IDX(freq+step, ZSIZE(fftV), idx);
 
         if (idx == lastidx)
         {
-            std::cout << "idx = " << idx << std::endl;
+            std::cout << "idx--------------------------- = " << idx << std::endl;
                 continue;
         }
 //        if ((fabs(lastfreq-freq))<(step))
@@ -312,39 +313,46 @@ void ProgSameEnergy::amplitudeMonogenicSignalBP(MultidimArray< std::complex<doub
 //	iternumber = formatString("_Amplitude_%i.vol", count);
 //	saveImg.write(iternumber);
 //	saveImg.clear();
-
-	// Low pass filter the monogenic amplitude
-	FourierFilter lowPassFilter;
-	lowPassFilter.w1 = w;
-	amplitude.setXmippOrigin();
-	lowPassFilter.applyMaskSpace(amplitude);
+//
+//	// Low pass filter the monogenic amplitude
+//	FourierFilter lowPassFilter;
+//	lowPassFilter.w1 = w;
+//	amplitude.setXmippOrigin();
+//	lowPassFilter.applyMaskSpace(amplitude);
 
 //	std::cout << " 4" << std::endl;
 	double meanAmplitude = 0;
 	long NA = 0;
 	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
 	{
-		if (DIRECT_MULTIDIM_ELEM(mask,n) > 0)
+		//if (DIRECT_MULTIDIM_ELEM(mask,n) > 0)
+		if (DIRECT_MULTIDIM_ELEM(resVol, n) > 2*sampling)
 		{
-			meanAmplitude += DIRECT_MULTIDIM_ELEM(amplitude,n);
-			++NA;
+			double freqmap=sampling/DIRECT_MULTIDIM_ELEM(resVol, n);
+			if (freqmap>w)
+			 {
+			    meanAmplitude += DIRECT_MULTIDIM_ELEM(amplitude,n);
+			    ++NA;
+			 }
 		}
 	}
 //	meanAmplitude = meanAmplitude/((double) NA);
 	meanAmplitude = meanAmplitude/NA;
 
-	if (w<sampling/10)
-	{
-		std::cout << "-------aqui toca cambiar el contraste-------- " << std::endl;
+	//if (w<sampling/10)
+	//{
+		std::cout << "-------change contrast-------- " << std::endl;
 		FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(bpVol)
 		{
 
-			if ((DIRECT_MULTIDIM_ELEM(mask,n) > 0))
+			if (DIRECT_MULTIDIM_ELEM(resVol, n) > 2*sampling)
 			{
-				DIRECT_MULTIDIM_ELEM(bpVol,n) *= meanAmplitude/DIRECT_MULTIDIM_ELEM(amplitude,n);
+				double freqmap=sampling/DIRECT_MULTIDIM_ELEM(resVol, n);
+				if (freqmap>w)
+				    DIRECT_MULTIDIM_ELEM(bpVol,n) *= meanAmplitude/DIRECT_MULTIDIM_ELEM(amplitude,n);
 			}
 		}
-	}
+	//}
 
 
 
@@ -372,13 +380,13 @@ void ProgSameEnergy::run()
     double extMinFreq = 0.0001;
     double extMaxFreq = 0.5;
 
-	std::cout << "Resolutions between " << minRes << " and " << maxRes << std::endl;
+	//std::cout << "Resolutions between " << minRes << " and " << maxRes << std::endl;
 
 	FourierTransformer transformer;
 
 	///////////////////
 	//Same Energy
-	double step = 0.02;
+	double step = 0.01;
 	sameEnergy(Vorig, extMinFreq, extMaxFreq, step, bpVol);
 
 	Image<double> save;
