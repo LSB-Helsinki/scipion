@@ -33,9 +33,7 @@ from pyworkflow.em.viewer import TableView
 from tkMessageBox import showerror
 from pyworkflow.gui.plotter import Plotter
 from pyworkflow.em.viewers.chimera_utils import \
-    createCoordinateAxisFile, \
-    adaptOriginFromCCP4ToChimera, runChimeraProgram, \
-    getProgram
+    createCoordinateAxisFile, runChimeraProgram, getProgram
 
 
 def errorWindow(tkParent, msg):
@@ -148,8 +146,9 @@ class ParseFile():
                 line = filePointer.readline()
                 words = line.strip().split("=")
                 # the first column has 2 words
-                row.extend([words[0].strip(), words[1].strip()])
-                dataList.append(tuple(row))
+                if len(words)>1:
+                    row.extend([words[0].strip(), words[1].strip()])
+                    dataList.append(tuple(row))
         self.headerDict[self.LASTITERATIONRESULTS] = headerList
         self.dataDict[self.LASTITERATIONRESULTS] = dataList
         self.msgDict[self.LASTITERATIONRESULTS] = msg
@@ -208,33 +207,34 @@ class ParseFile():
                 zANGL.append(float(words[9]))
                 rmsCHIRAL.append(float(words[10]))
 
-        self.headerDict[self.FOMPLOT] = ["cycle", "fom"]
-        self.dataDict[self.FOMPLOT] = [Ncyc, FOM]
-        self.msgDict[self.FOMPLOT] = msg
-        self.titleDict[self.FOMPLOT] = "FOM vs Cycle"
+        if len(Ncyc) > 0 :
+            self.headerDict[self.FOMPLOT] = ["cycle", "fom"]
+            self.dataDict[self.FOMPLOT] = [Ncyc, FOM]
+            self.msgDict[self.FOMPLOT] = msg
+            self.titleDict[self.FOMPLOT] = "FOM vs Cycle"
 
-        self.headerDict[self.RFACTORPLOT] = ["cycle", "Rfact", "Rfree"]
-        self.dataDict[self.RFACTORPLOT] = [Ncyc, Rfact, Rfree]
-        self.msgDict[self.RFACTORPLOT] = msg
-        self.titleDict[self.RFACTORPLOT] = "Rfact and Rfree vs Cycle"
+            self.headerDict[self.RFACTORPLOT] = ["cycle", "Rfact", "Rfree"]
+            self.dataDict[self.RFACTORPLOT] = [Ncyc, Rfact, Rfree]
+            self.msgDict[self.RFACTORPLOT] = msg
+            self.titleDict[self.RFACTORPLOT] = "Rfact and Rfree vs Cycle"
 
-        self.headerDict[self.MLLPLOT] = ["cycle", "mLL"]
-        self.dataDict[self.MLLPLOT] = [Ncyc, mLL]
-        self.msgDict[self.MLLPLOT] = msg
-        self.titleDict[self.MLLPLOT] = "-LL vs Cycle"
+            self.headerDict[self.MLLPLOT] = ["cycle", "mLL"]
+            self.dataDict[self.MLLPLOT] = [Ncyc, mLL]
+            self.msgDict[self.MLLPLOT] = msg
+            self.titleDict[self.MLLPLOT] = "-LL vs Cycle"
 
-        self.headerDict[self.MLLFREEPLOT] = ["cycle", "mLLfree"]
-        self.dataDict[self.MLLFREEPLOT] = [Ncyc, mLLfree]
-        self.msgDict[self.MLLFREEPLOT] = msg
-        self.titleDict[self.MLLFREEPLOT] = "-LLfree vs Cycle"
+            self.headerDict[self.MLLFREEPLOT] = ["cycle", "mLLfree"]
+            self.dataDict[self.MLLFREEPLOT] = [Ncyc, mLLfree]
+            self.msgDict[self.MLLFREEPLOT] = msg
+            self.titleDict[self.MLLFREEPLOT] = "-LLfree vs Cycle"
 
-        self.headerDict[self.GEOMETRYPLOT] = ["cycle", "rmsBOND", "zBOND",
-                                              "rmsANGL", "zANGL", "rmsCHIRAL"]
-        self.dataDict[self.GEOMETRYPLOT] = [Ncyc, rmsBOND, zBOND, rmsANGL,
-                                            zANGL, rmsCHIRAL]
-        self.msgDict[self.GEOMETRYPLOT] = msg
-        self.titleDict[self.GEOMETRYPLOT] = "rmsBOND, zBOND, rmsANGL, zANGL " \
-                                            "and rmsCHIRAL vs Cycle"
+            self.headerDict[self.GEOMETRYPLOT] = ["cycle", "rmsBOND", "zBOND",
+                                                  "rmsANGL", "zANGL", "rmsCHIRAL"]
+            self.dataDict[self.GEOMETRYPLOT] = [Ncyc, rmsBOND, zBOND, rmsANGL,
+                                                zANGL, rmsCHIRAL]
+            self.msgDict[self.GEOMETRYPLOT] = msg
+            self.titleDict[self.GEOMETRYPLOT] = "rmsBOND, zBOND, rmsANGL, zANGL " \
+                                                "and rmsCHIRAL vs Cycle"
 
     def retrieveFomPlot(self):
         return self.headerDict[self.FOMPLOT],\
@@ -299,30 +299,31 @@ class CCP4ProtRunRefmacViewer(ProtocolViewer):
     def _defineParams(self, form):
         form.addSection(label='Visualization of Refmac results')
         # group = form.addGroup('Overall results')
-        form.addParam('displayMask', LabelParam,
-                      label="PDB based Mask",
-                      help="Display Masked map")
+        form.addParam('displayMapModel', LabelParam,
+                      label="Volume and models",
+                      help="Display of input volume, input pdb that has to be"
+                           "refined and final refined model of the structure.")
         form.addParam('showFinalResults', LabelParam,
                       label="Final Results Table",
-                      help="Table of Final Results from refine.log file")
+                      help="Table of Final Results from refine.log file.")
         form.addParam('showLogFile', LabelParam,
                       label="Show log file",
-                      help="open refmac log file in a text editor")
+                      help="Open refmac log file in a text editor.")
         form.addParam('showLastIteration', LabelParam,
                       label="Results Table (last iteration)",
                       help="Table stored in log file summarizing the last "
-                           "iteration")
+                           "iteration.")
         form.addParam('displayRFactorPlot', LabelParam,
                       label="R-factor vs. iteration",
-                      help="Plot R-factor as a function of the iteration")
+                      help="Plot R-factor as a function of the iteration.")
         form.addParam('displayFOMPlot', LabelParam,
                       label="FOM vs. iteration",
                       help="Plot Figure Of Merit as a function of the "
-                           "iteration")
+                           "iteration.")
         form.addParam('displayLLPlot', LabelParam,
                       label="-LL vs. iteration",
                       help="Plot Log likelihood as a function of the "
-                           "iteration")
+                           "iteration.")
         form.addParam('displayLLfreePlot', LabelParam,
                       label="-LLfree vs. iteration",
                       help="Plot Log likelihood as a function of the "
@@ -334,13 +335,13 @@ Geometry includes rmsBOND (root mean square bond lengths)
 zBOND (zscore of the deviation of bond lengths)
 rmsANGL (root mean square bond angles)
 zANGL (zscore of the deviation of bond angles)
-and rmsCHIRAL (root mean square of chiral index""")
+and rmsCHIRAL (root mean square of chiral index.""")
 
     def _getVisualizeDict(self):
         return {
             'showFinalResults': self._visualizeFinalResults,
             'showLastIteration': self._visualizeLastIteration,
-            'displayMask': self._visualizeMask,
+            'displayMapModel': self._visualizeMapModel,
             'displayRFactorPlot': self._visualizeRFactorPlot,
             'displayFOMPlot': self._visualizeFOMPlot,
             'displayLLPlot': self._visualizeLLPlot,
@@ -349,11 +350,11 @@ and rmsCHIRAL (root mean square of chiral index""")
             'showLogFile': self._visualizeLogFile
         }
 
-    def _visualizeMask(self, e=None):
+    def _visualizeMapModel(self, e=None):
         bildFileName = os.path.abspath(self.protocol._getTmpPath(
             "axis_output.bild"))
         if self.protocol.inputVolume.get() is None:
-            _inputVol = self.protocol.pdbFileToBeRefined.get().getVolume()
+            _inputVol = self.protocol.inputStructure.get().getVolume()
             dim = _inputVol.getDim()[0]
             sampling = _inputVol.getSamplingRate()
         else:
@@ -371,9 +372,11 @@ and rmsCHIRAL (root mean square of chiral index""")
         # input 3D map
         counter += 1  # 1
         fnVol = self.protocol._getInputVolume()
-        f.write("open %s\n" % os.path.abspath(fnVol.getFileName()))
-        x, y, z = adaptOriginFromCCP4ToChimera(
-            fnVol.getOrigin(returnInitIfNone=True).getShifts())
+        fnVolName = os.path.abspath(fnVol.getFileName())
+        if fnVolName.endswith(":mrc"):
+            fnVolName= fnVolName.split(":")[0]
+        f.write("open %s\n" % fnVolName)
+        x, y, z = fnVol.getOrigin(force=True).getShifts()
         sampling = fnVol.getSamplingRate()
         f.write("volume #%d style surface voxelSize %f origin "
                 "%0.2f,%0.2f,%0.2f\n" % (counter, sampling, x, y, z))
@@ -384,33 +387,9 @@ and rmsCHIRAL (root mean square of chiral index""")
             self.protocol.inputStructure.get().getFileName())
         f.write("open %s\n" % pdbFileName)
 
-        # Mask created by first refmac step
+        # second refmac step output -> refined PDB
         counter += 1  # 3
-        refmacShiftDict = self.protocol.parseRefmacShiftFile()
-        shiftDict = refmacShiftDict[self.protocol.refmacShiftsNames[3]]
-        x = shiftDict[0]
-        y = shiftDict[1]
-        z = shiftDict[2]
-        maskedMapFileName = os.path.abspath(self.protocol._getExtraPath(
-                                            self.protocol.maskedMapFileName +
-                                            '.map'))
-        f.write("open %s\n" % maskedMapFileName)
-        f.write("move %0.2f,%0.2f,%0.2f model #%d coord #0\n" %
-                (x, y, z, counter))
-
-        # second refmac step output (no shift needed)
-        counter += 1  # 4
         pdbFileName = os.path.abspath(self.protocol.outputPdb.getFileName())
-        print pdbFileName
-        f.write("open %s\n" % pdbFileName)
-
-        ####TO DELETE
-        counter += 1  # 5
-        pdbFileName = os.path.abspath(self.protocol._getExtraPath(
-            "refmac-mask.pdb"))
-        print pdbFileName
-        ####
-
         f.write("open %s\n" % pdbFileName)
 
         f.close()
@@ -447,10 +426,10 @@ and rmsCHIRAL (root mean square of chiral index""")
 
         TableView(headerList=headerList,
                   dataList=dataList,
-                  mesg="Values for a good fitted 3D map. R factor ~ 0.3, "
+                  mesg="Values for a good fitted 3D map.\nR factor ~ 0.3,\n"
                        "Rms BondLength ~ 0.02.",
                   title="Refmac: Final Results Summary",
-                  height=len(dataList), width=200, padding=40)
+                  height=len(dataList), width=250, padding=40)
 
     def _visualizeLogFile(self, e=None):
         """Show refmac log file."""

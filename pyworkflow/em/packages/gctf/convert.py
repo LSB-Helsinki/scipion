@@ -30,13 +30,13 @@ This module contains converter functions that will serve to:
 """
 
 import os
+import re
 import numpy
 from collections import OrderedDict
 
 from pyworkflow.em.packages.gctf import GCTF_HOME
 from pyworkflow.em.constants import ALIGN_2D, ALIGN_3D, ALIGN_PROJ, ALIGN_NONE
-from pyworkflow.object import Float, ObjectWrap
-import pyworkflow.em as em
+from pyworkflow.object import ObjectWrap
 import pyworkflow.em.metadata as md
 import pyworkflow.utils as pwutils
 
@@ -68,6 +68,7 @@ def parseGctfOutput(filename):
     if os.path.exists(filename):
         # Create an empty list with: defU, defV, angle, CC and resolution
         result = [0.] * 6
+        ansi_escape = re.compile(r'\x1b[^m]*m')
         f = open(filename)
         for line in f:
             if 'Final Values' in line:
@@ -88,7 +89,8 @@ def parseGctfOutput(filename):
                 # Take ctfResolution as a tuple
                 # that is the last value in the line
                 # but remove escape characters first
-                result[5] = float(line.strip().split()[-2])
+                resol = ansi_escape.sub('', line)
+                result[5] = float(resol.strip().split()[-1])
                 break
         f.close()
     else:
@@ -114,7 +116,10 @@ def readCtfModel(ctfModel, filename, ctf4=False):
         ctfModel.setStandardDefocus(defocusU, defocusV, defocusAngle)
     ctfModel.setFitQuality(ctfFit)
     ctfModel.setResolution(ctfResolution)
-    ctfModel.setPhaseShift(ctfPhaseShift)
+
+    # Avoid creation of phaseShift
+    if ctfPhaseShift != 0:
+        ctfModel.setPhaseShift(ctfPhaseShift)
 
 
 def getEnviron():

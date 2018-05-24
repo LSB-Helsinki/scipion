@@ -194,6 +194,8 @@ IMAGE_EXTRA_LABELS = [
     xmipp.MDL_CUMULATIVE_SSNR,
     xmipp.MDL_PARTICLE_ID,
     xmipp.MDL_FRAME_ID,
+    xmipp.MDL_SCORE_BY_VAR,
+    xmipp.MDL_SCORE_BY_GINI,
     ]
 
 ANGLES_DICT = OrderedDict([
@@ -651,6 +653,7 @@ def rowToCtfModel(ctfRow):
         ctfModel.standardize()
         # Set psd file names
         setPsdFiles(ctfModel, ctfRow)
+        ctfModel.setPhaseShift(0.0)  # for consistency with ctfModel
 
     else:
         ctfModel = None
@@ -707,11 +710,11 @@ def readCTFModel(filename, mic):
     return mdToCTFModel(md, mic)
 
 
-def openMd(fn, ismanual=True):
+def openMd(fn, state='Manual'):
     # We are going to write metadata directy to file to do it faster
     f = open(fn, 'w')
+    ismanual = state == 'Manual'
     block = 'data_particles' if ismanual else 'data_particles_auto'
-    state = 'Manual' if ismanual else 'Supervised'
     s = """# XMIPP_STAR_1 *
 #
 data_header
@@ -732,6 +735,11 @@ loop_
 
 
 def writeSetOfCoordinates(posDir, coordSet, ismanual=True, scale=1):
+    state = 'Manual' if ismanual else 'Supervised'
+    writeSetOfCoordinatesWithState(posDir, coordSet, state, scale)
+
+
+def writeSetOfCoordinatesWithState(posDir, coordSet, state, scale=1):
     """ Write a pos file on metadata format for each micrograph
     on the coordSet.
     Params:
@@ -764,7 +772,7 @@ def writeSetOfCoordinates(posDir, coordSet, ismanual=True, scale=1):
             if f:
                 f.close()
                 c = 0
-            f = openMd(posDict[micId], ismanual=ismanual)
+            f = openMd(posDict[micId], state)
             lastMicId = micId
         c += 1
         if scale != 1:
@@ -779,28 +787,22 @@ def writeSetOfCoordinates(posDir, coordSet, ismanual=True, scale=1):
     if f:
         f.close()
 
-    state = 'Manual' if ismanual else 'Supervised'
     # Write config.xmd metadata
     configFn = join(posDir, 'config.xmd')
-    md = xmipp.MetaData()
-    # Write properties block
-    objId = md.addObject()
-    md.setValue(xmipp.MDL_PICKING_PARTICLE_SIZE, int(boxSize), objId)
-    md.setValue(xmipp.MDL_PICKING_STATE, state, objId)
-    md.write('properties@%s' % configFn)
+    writeCoordsConfig(configFn, int(boxSize), state)
 
     return posDict.values()
 
 
-def writeCoordsConfig(configFn, boxSize=100, isManual=True):
-    """ Write the config.xmd file needed for Xmipp extraction.
+def writeCoordsConfig(configFn, boxSize, state):
+    """ Write the config.xmd file needed for Xmipp picker.
     Params:
         configFn: The filename were to store the configuration.
         boxSize: the box size in pixels for extraction.
-        isManual: if particles are in 'Manual' or 'Supervised' state
+        state: picker state
     """
-    state = 'Manual' if isManual else 'Supervised'
     # Write config.xmd metadata
+    print("writeCoordsConfig: state=", state)
     md = xmipp.MetaData()
     # Write properties block
     objId = md.addObject()
@@ -809,7 +811,8 @@ def writeCoordsConfig(configFn, boxSize=100, isManual=True):
     md.write('properties@%s' % configFn)
 
 
-def writeMicCoordinates(mic, coordList, outputFn, isManual=True, getPosFunc=None):
+def writeMicCoordinates(mic, coordList, outputFn, isManual=True,
+                        getPosFunc=None):
     """ Write the pos file as expected by Xmipp with the coordinates
     of a given micrograph.
     Params:
@@ -823,7 +826,8 @@ def writeMicCoordinates(mic, coordList, outputFn, isManual=True, getPosFunc=None
     if getPosFunc is None:
         getPosFunc = lambda coord: coord.getPostion()
 
-    f = openMd(outputFn, ismanual=isManual)
+    state = 'Manual' if isManual else 'Supervised'
+    f = openMd(outputFn, state)
 
     for coord in coordList:
         x, y = getPosFunc(coord)
@@ -886,7 +890,7 @@ def readPosCoordinates(posFile, readDiscarded=False):
     particles_auto: with automatically picked particles.
     If posFile doesn't exist, the metadata will be empty
     readDiscarded: read only the coordinates in the particles_auto DB
-                   with the MDL_ENABLE set at -1 and a positive cost  
+                   with the MDL_ENABLE set at -1 and a positive cost
     """
     mData = md.MetaData()
 
@@ -956,11 +960,19 @@ def setOfImagesToMd(imgSet, md, imgToFunc, **kwargs):
     if 'alignType' not in kwargs:
         kwargs['alignType'] = imgSet.getAlignment()
 
-    for img in imgSet:
-        objId = md.addObject()
-        imgRow = XmippMdRow()
-        imgToFunc(img, imgRow, **kwargs)
-        imgRow.writeToMd(md, objId)
+    if 'where' in kwargs:
+        where = kwargs['where']
+        for img in imgSet.iterItems(where=where):
+            objId = md.addObject()
+            imgRow = XmippMdRow()
+            imgToFunc(img, imgRow, **kwargs)
+            imgRow.writeToMd(md, objId)
+    else:
+        for img in imgSet:
+            objId = md.addObject()
+            imgRow = XmippMdRow()
+            imgToFunc(img, imgRow, **kwargs)
+            imgRow.writeToMd(md, objId)
 
 
 def readAnglesFromMicrographs(micFile, anglesSet):

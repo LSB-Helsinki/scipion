@@ -338,7 +338,7 @@ class ImageHandler(object):
         self._img.inplaceMultiply(-1)
         # Write to output
         self._img.write(self._convertToLocation(outputObj))
-    
+
     def __runXmippProgram(self, program, args):
         """ Internal shortcut function to launch a Xmipp program. """
         import pyworkflow.em.packages.xmipp3 as xmipp3
@@ -450,12 +450,14 @@ class ImageHandler(object):
 DT_FLOAT = ImageHandler.DT_FLOAT
 
 
+#TODO: use biopython and move this fuction to convert_Atom_struct
 def downloadPdb(pdbId, pdbFile, log=None):
     pdbGz = pdbFile + ".gz"
     result = (__downloadPdb(pdbId, pdbGz, log) and 
               __unzipPdb(pdbGz, pdbFile, log))
     return result
     
+#TODO: use biopython and move this fuction to convert_Atom_struct
 def __downloadPdb(pdbId, pdbGz, log):
     import ftplib
     """Download a pdb file given its id. """
@@ -526,3 +528,32 @@ def __unzipPdb(pdbGz, pdbFile, log, cleanFile=True):
         success = False
         
     return success
+
+
+def getSubsetByDefocus(inputCTFs, inputMics, nMics):
+    """ Return a subset of inputMics that covers the whole range of defocus
+    from the inputCtfs set.
+    This function can be used from picking wizards that wants to optimize the
+    parameters for micrographs with different defocus values.
+    Params:
+        nMics is the number of micrographs that will be in the subset.
+    """
+    sortedMicIds = []
+
+    # Sort CTFs by defocus and select only those that match with inputMics
+    for ctf in inputCTFs.iterItems(orderBy='_defocusU'):
+        ctfId = ctf.getObjId()
+        if ctfId in inputMics:
+            sortedMicIds.append(ctfId)
+
+    # Take an equally spaced subset of micrographs
+    space = len(sortedMicIds) / (nMics - 1)
+    micIds = [sortedMicIds[0], sortedMicIds[-1]]
+    pos = 0
+    while len(micIds) < nMics:  # just add first and last
+        pos += space
+        micIds.insert(1, sortedMicIds[pos])
+
+    # Return the list with selected micrographs
+    return [inputMics[micId].clone() for micId in micIds]
+
