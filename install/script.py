@@ -202,7 +202,8 @@ python = env.addLibrary(
     'python',
     tar='Python-2.7.14.tgz',
     targets=[env.getLib('python2.7'), env.getBin('python')],
-    flags=['--enable-shared'],
+#    flags=['--enable-shared'],
+    flags=['--enable-shared', '--enable-unicode=ucs4'],
     deps=[sqlite, tk, zlib])
 
 pcre = env.addLibrary(
