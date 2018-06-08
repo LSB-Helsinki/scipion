@@ -115,6 +115,8 @@ void ProgLocSharpening::produceSideInfo()
     		{
     			DIRECT_MULTIDIM_ELEM(resVol, n) = 2*sampling;
     		}
+//    		else if (DIRECT_MULTIDIM_ELEM(resVol, n) ==0)
+//    			DIRECT_MULTIDIM_ELEM(resVol, n) = maxRes+5;
     	}
 
         resVol.setXmippOrigin();
@@ -309,8 +311,6 @@ void ProgLocSharpening::run()
         {
         std::cout << "----------------Iteration " << i << "----------------" << std::endl;
 
-        Image<double> filteredvolume;
-
         auxVol = filteredVol;
         transformer.FourierTransform(auxVol, fftV);
 
@@ -324,7 +324,8 @@ void ProgLocSharpening::run()
         		{
             		FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(Vorig)
             		{
-            			normOrig +=(DIRECT_MULTIDIM_ELEM(Vorig,n)*DIRECT_MULTIDIM_ELEM(Vorig,n));
+                       //if (DIRECT_MULTIDIM_ELEM(resVol, n) <= maxRes-5) //la mascara
+            			   normOrig +=(DIRECT_MULTIDIM_ELEM(Vorig,n)*DIRECT_MULTIDIM_ELEM(Vorig,n));
             		}
             		normOrig=sqrt(normOrig);
                     std::cout << "norma del original  " << normOrig << std::endl;
@@ -335,7 +336,8 @@ void ProgLocSharpening::run()
         		double norm=0;
         		FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(operatedfiltered)
         		{
-        			 norm +=(DIRECT_MULTIDIM_ELEM(operatedfiltered,n)*DIRECT_MULTIDIM_ELEM(operatedfiltered,n));
+                    //if (DIRECT_MULTIDIM_ELEM(resVol, n) <= maxRes-5) //la mascara
+        			    norm +=(DIRECT_MULTIDIM_ELEM(operatedfiltered,n)*DIRECT_MULTIDIM_ELEM(operatedfiltered,n));
         		}
         		norm=sqrt(norm);
 
