@@ -3967,3 +3967,148 @@ void denoiseTVFilter(MultidimArray<double> &xnew, int maxIter)
         fold = fnew;
     }
 }
+
+/** Define the parameters for use inside an Xmipp program */
+void MonogenicFilter::defineParams(XmippProgram * program)
+{
+    program->addParamsLine("== Monogenic filter ==");
+    program->addParamsLine(
+        "  [--monogenic ]           : Monogenic filter");
+}
+
+/** Read from program command line */
+void MonogenicFilter::readParams(XmippProgram * program)
+{
+}
+
+void MonogenicFilter::apply(MultidimArray< double > &inputVol)
+{
+
+	MultidimArray<double> iu, VRiesz, amplitude;
+	FourierTransformer transformer, transformer_inv;
+	MultidimArray< std::complex<double> > fftV, fftVRiesz, fftVRiesz_aux;
+	Matrix1D<double> freq_fourier;
+
+	VRiesz.resizeNoCopy(inputVol);
+
+	transformer.FourierTransform(inputVol, fftV);
+	iu.initZeros(fftV);
+
+	// Calculate u (vector norm of frequency directions)
+	double uzA, uyA, uxA, uz2A, u2A, uz2y2A;
+	long n=0;
+	for(size_t k=0; k<ZSIZE(fftV); ++k)
+	{
+		FFT_IDX2DIGFREQ(k,ZSIZE(inputVol),uzA);
+		uz2A=uzA*uzA;
+
+		for(size_t i=0; i<YSIZE(fftV); ++i)
+		{
+			FFT_IDX2DIGFREQ(i,YSIZE(inputVol),uyA);
+			uz2y2A=uz2A+uyA*uyA;
+
+			for(size_t j=0; j<XSIZE(fftV); ++j)
+			{
+				FFT_IDX2DIGFREQ(j,XSIZE(inputVol),uxA);
+				u2A=uz2y2A+uxA*uxA;
+				if ((k != 0) || (i != 0) || (j != 0))
+					DIRECT_MULTIDIM_ELEM(iu,n) = 1.0/sqrt(u2A);
+				else
+					DIRECT_MULTIDIM_ELEM(iu,n) = 1e38;
+				++n;
+			}
+		}
+	}
+
+	double u;
+	int size_fourier = ZSIZE(fftV);
+	freq_fourier.initZeros(size_fourier);
+
+	int size = ZSIZE(inputVol);
+
+	VEC_ELEM(freq_fourier,0) = 1e-38;
+	for(size_t k=0; k<size_fourier; ++k)
+	{
+		FFT_IDX2DIGFREQ(k,size, u);
+		VEC_ELEM(freq_fourier,k) = u;
+	}
+
+
+	fftVRiesz.initZeros(fftV);
+	amplitude.resizeNoCopy(VRiesz);
+	fftVRiesz_aux.initZeros(fftV);
+	std::complex<double> J(0,1);
+
+	// Filter the input volume and add it to amplitude
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(fftV)
+	{
+		double iun=DIRECT_MULTIDIM_ELEM(iu,n);
+		double un=1.0/iun;
+		DIRECT_MULTIDIM_ELEM(fftVRiesz, n) = DIRECT_MULTIDIM_ELEM(fftV, n);
+		DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) = -J;
+		DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) *= DIRECT_MULTIDIM_ELEM(fftVRiesz, n);
+		DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) *= iun;
+	}
+
+	transformer_inv.inverseFourierTransform(fftVRiesz, amplitude);
+
+
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+		DIRECT_MULTIDIM_ELEM(amplitude,n)*=DIRECT_MULTIDIM_ELEM(amplitude,n);
+
+	// Calculate first component of Riesz vector
+	fftVRiesz.initZeros(fftV);
+	double uz, uy, ux;
+	n=0;
+
+	for(size_t k=0; k<ZSIZE(fftV); ++k)
+	{
+		for(size_t i=0; i<YSIZE(fftV); ++i)
+		{
+			for(size_t j=0; j<XSIZE(fftV); ++j)
+			{
+				ux = VEC_ELEM(freq_fourier,j);
+				DIRECT_MULTIDIM_ELEM(fftVRiesz, n) = ux*DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n);
+				++n;
+			}
+		}
+	}
+	transformer_inv.inverseFourierTransform(fftVRiesz, VRiesz);
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+		DIRECT_MULTIDIM_ELEM(amplitude,n)+=DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+
+	// Calculate second and third components of Riesz vector
+	n=0;
+	for(size_t k=0; k<ZSIZE(fftV); ++k)
+	{
+		uz = VEC_ELEM(freq_fourier,k);
+		for(size_t i=0; i<YSIZE(fftV); ++i)
+		{
+			uy = VEC_ELEM(freq_fourier,i);
+			for(size_t j=0; j<XSIZE(fftV); ++j)
+			{
+				DIRECT_MULTIDIM_ELEM(fftVRiesz, n) = uy*DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n);
+				DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) = uz*DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n);
+				++n;
+			}
+		}
+	}
+	transformer_inv.inverseFourierTransform(fftVRiesz, VRiesz);
+
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+		DIRECT_MULTIDIM_ELEM(amplitude,n)+=DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+
+	transformer_inv.inverseFourierTransform(fftVRiesz_aux, VRiesz);
+
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+	{
+		DIRECT_MULTIDIM_ELEM(amplitude,n)+=DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+		DIRECT_MULTIDIM_ELEM(amplitude,n)=sqrt(DIRECT_MULTIDIM_ELEM(amplitude,n));
+		//save the result
+		DIRECT_MULTIDIM_ELEM(inputVol,n)=DIRECT_MULTIDIM_ELEM(amplitude,n);
+	}
+
+
+}
+
+

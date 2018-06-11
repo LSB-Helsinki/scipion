@@ -1721,4 +1721,16 @@ public:
     void laplacian(const MultidimArray<double> &img, MultidimArray< std::complex<double> > &fimg, bool direct);
 };
 
+class MonogenicFilter: public XmippFilter
+{
+public:
+	/** Define the parameters for use inside an Xmipp program */
+	static void defineParams(XmippProgram * program);
+	/** Read from program command line */
+	void readParams(XmippProgram * program);
+    /** Apply the filter to an image or volume*/
+    void apply(MultidimArray< double > &inputVol);
+
+};
+
 #endif
