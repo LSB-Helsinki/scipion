@@ -50,6 +50,7 @@ void ProgFilter::defineParams()
     RetinexFilter::defineParams(this);
     DenoiseTVFilter::defineParams(this);
     SoftNegativeFilter::defineParams(this);
+    MonogenicFilter::defineParams(this);
 
     //examples
     addExampleLine("Filter a volume using a mask =volumeMask.vol= to remove bad pixels:", false);
@@ -65,7 +66,7 @@ void ProgFilter::defineParams()
     addExampleLine("xmipp_transform_filter  --fourier wedge  -60 60 0 0 10 -i ico.spi -o kk0.spi --verbose");
     addExampleLine("Save filtering mask (do not filter)",false);
     addExampleLine("xmipp_transform_filter  --fourier wedge  -60 60 0 0 10 -i ico.spi -o kk0.spi --verbose --save mask.spi");
-    addExampleLine("Preprocess image optained in the nikon coolscan",false);
+    addExampleLine("Preprocess image obtained in the nikon coolscan",false);
     addExampleLine("xmipp_transform_filter  --log  -i ico.spi -o kk0.spi --fa 4.431 --fb 0.4018 --fc 336.6");
     addExampleLine("xmipp_transform_filter  -i Falcon_2014_07_16-16_32_43_0.mrcs --denoiseTV 50");
 }
@@ -104,6 +105,8 @@ void ProgFilter::readParams()
         filter = new DenoiseTVFilter();
     else if (checkParam("--softnegative"))
         filter = new SoftNegativeFilter();
+    else if (checkParam("--monogenic"))
+        filter = new MonogenicFilter();
     else
         REPORT_ERROR(ERR_ARG_MISSING, "You should provide some filter");
     //Read params
