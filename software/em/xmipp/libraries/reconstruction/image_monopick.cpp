@@ -92,8 +92,26 @@ void ProgMonoPick::produceSideInfo()
 
 	img().setXmippOrigin();
 
+//	img().initZeros(YSIZE(img()), YSIZE(img()));
+//
+//	std::cout << "before loop " << STARTINGY(img()) << " " << FINISHINGY(img()) << std::endl;
+//
+//	for(int i=STARTINGY(img()); i<FINISHINGY(img()); ++i)
+//	{
+//		for(int j=STARTINGX(img()); j<FINISHINGX(img()); ++j)
+//		{
+//			if (sqrt(i*i + j*j) > 100)
+//				A2D_ELEM(img(),i,j) = 1;
+//			else
+//				A2D_ELEM(img(),i,j) = 0;
+//		}
+//	}
+//
+//	Image<double> mono2;
+//	mono2() = img();
+//	mono2.write("volumen.xmp");
 
-	transformer_inv.setThreadsNumber(nthrs);
+//	transformer_inv.setThreadsNumber(nthrs);
 
 	FourierTransformer transformer;
 	MultidimArray<double> &inputVol = img();
@@ -103,18 +121,18 @@ void ProgMonoPick::produceSideInfo()
 	iu.initZeros(fftV);
 
 	// Calculate u and first component of Riesz vector
-	double uz, uy, ux, uz2, u2, uz2y2;
+	double uz, uy, ux, u2, uy2;
 	long n=0;
 
 	for(size_t i=0; i<YSIZE(fftV); ++i)
 	{
 		FFT_IDX2DIGFREQ(i,YSIZE(inputVol),uy);
-		uz2y2=uy*uy;
+		uy2=uy*uy;
 
 		for(size_t j=0; j<XSIZE(fftV); ++j)
 		{
 			FFT_IDX2DIGFREQ(j,XSIZE(inputVol),ux);
-			u2=uz2y2+ux*ux;
+			u2=uy2+ux*ux;
 			if ((i != 0) || (j != 0))
 				DIRECT_MULTIDIM_ELEM(iu,n) = 1.0/sqrt(u2);
 			else
@@ -123,59 +141,50 @@ void ProgMonoPick::produceSideInfo()
 		}
 	}
 
-	#ifdef DEBUG
-	Image<double> saveiu;
-	saveiu = 1/iu;
-	saveiu.write("iu.vol");
-	#endif
-
-	// Prepare low pass filter
-	lowPassFilter.FilterShape = RAISED_COSINE;
-	lowPassFilter.raised_w = 0.01;
-	lowPassFilter.do_generate_3dmask = false;
-	lowPassFilter.FilterBand = LOWPASS;
 
 
-	#ifdef DEBUG_MASK
-	mask.write("mask.vol");
-	#endif
+	int sizeX, sizeY;
 
-	fftN=&fftV;
-
-	int size;
-	if (XSIZE(img())>YSIZE(img()))
-		size = XSIZE(img());
-	else
-		size = YSIZE(img());
+	sizeX = XSIZE(img());
+	sizeY = YSIZE(img());
 
 	double u;
-	int size_fourier = size;
-	freq_fourier.initZeros(size_fourier);
+	int size_fourier = sizeX;
+	freq_fourierUX.initZeros(sizeX);
+	freq_fourierUY.initZeros(sizeY);
 
+	VEC_ELEM(freq_fourierUX,0) = 1e-38;
+	VEC_ELEM(freq_fourierUY,0) = 1e-38;
 
-	VEC_ELEM(freq_fourier,0) = 1e-38;
-	for(size_t k=0; k<size_fourier; ++k)
+	for(size_t k=0; k<sizeX; ++k)
 	{
-		FFT_IDX2DIGFREQ(k,size, u);
-		VEC_ELEM(freq_fourier,k) = u;
+		FFT_IDX2DIGFREQ(k,sizeX, u);
+		VEC_ELEM(freq_fourierUX,k) = u;
+	}
+	for(size_t k=0; k<sizeY; ++k)
+	{
+		FFT_IDX2DIGFREQ(k,sizeY, u);
+		VEC_ELEM(freq_fourierUY,k) = u;
 	}
 
 	MultidimArray<double> amplitude;
 
-	amplitudeMonogenicSignal3D(img(), fftV, amplitude);
+	amplitudeMonogenicSignal(img(), fftV, amplitude);
 
 	Image<double> mono;
 	mono() = amplitude;
 	mono.write("amplitude.xmp");
 
+
+
 }
 
 
-void ProgMonoPick::amplitudeMonogenicSignal3D(const MultidimArray<double> &vol,
+void ProgMonoPick::amplitudeMonogenicSignal(const MultidimArray<double> &vol,
 		MultidimArray< std::complex<double> > &myfftV,
 		MultidimArray<double> &amplitude)
 {
-	fftVRiesz= myfftV;
+	fftVRiesz = myfftV;
 	fftVRiesz_aux.initZeros(myfftV);
 	std::complex<double> J(0,1);
 
@@ -183,39 +192,62 @@ void ProgMonoPick::amplitudeMonogenicSignal3D(const MultidimArray<double> &vol,
 	long n=0;
 	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(myfftV)
 	{
-		DIRECT_MULTIDIM_ELEM(fftVRiesz, n) = -J;
+		DIRECT_MULTIDIM_ELEM(fftVRiesz, n) *= (-J);
 		DIRECT_MULTIDIM_ELEM(fftVRiesz, n) *= DIRECT_MULTIDIM_ELEM(iu,n);
 	}
 
-	// Calculate first component of Riesz vector
-	double uy, ux;
-	n=0;
-	for(size_t i=0; i<YSIZE(myfftV); ++i)
-	{
-		uy = VEC_ELEM(freq_fourier,i);
-		for(size_t j=0; j<XSIZE(myfftV); ++j)
-		{
-			ux = VEC_ELEM(freq_fourier,j);
-			DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) = ux*DIRECT_MULTIDIM_ELEM(fftVRiesz, n);
-			DIRECT_MULTIDIM_ELEM(fftVRiesz, n) = uy*DIRECT_MULTIDIM_ELEM(fftVRiesz, n);
-			++n;
-		}
-	}
+	transformer_inv.inverseFourierTransform(myfftV, VRiesz);
 
-	transformer_inv.inverseFourierTransform(fftVRiesz, VRiesz);
+	Image<double> mono;
+	mono() = VRiesz;
+	mono.write("amplitudeorig.xmp");
 
 	amplitude.resizeNoCopy(VRiesz);
 
 	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+		DIRECT_MULTIDIM_ELEM(amplitude,n) = DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+
+	// Calculate first component of Riesz vector
+	double ux;
+	n=0;
+	for(size_t i=0; i<YSIZE(myfftV); ++i)
 	{
-		DIRECT_MULTIDIM_ELEM(amplitude,n)=DIRECT_MULTIDIM_ELEM(vol,n)*DIRECT_MULTIDIM_ELEM(vol,n);
-		DIRECT_MULTIDIM_ELEM(amplitude,n)+=DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+		for(size_t j=0; j<XSIZE(myfftV); ++j)
+		{
+			ux = VEC_ELEM(freq_fourierUX,j);
+			DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) = ux*DIRECT_MULTIDIM_ELEM(fftVRiesz, n);
+			++n;
+		}
+	}
+
+	transformer_inv.inverseFourierTransform(fftVRiesz_aux, VRiesz);
+
+//	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(mono())
+//		DIRECT_MULTIDIM_ELEM(mono(),n)= DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+//
+	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
+		DIRECT_MULTIDIM_ELEM(amplitude,n) += DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+
+
+	n=0;
+	double uy;
+	for(size_t i=0; i<YSIZE(myfftV); ++i)
+	{
+		uy = VEC_ELEM(freq_fourierUY,i);
+		for(size_t j=0; j<XSIZE(myfftV); ++j)
+		{
+			DIRECT_MULTIDIM_ELEM(fftVRiesz_aux, n) = uy*DIRECT_MULTIDIM_ELEM(fftVRiesz, n);
+			++n;
+		}
 	}
 
 	transformer_inv.inverseFourierTransform(fftVRiesz_aux, VRiesz);
 
 	FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(amplitude)
-		DIRECT_MULTIDIM_ELEM(amplitude,n)+=DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+	{
+		DIRECT_MULTIDIM_ELEM(amplitude,n) += DIRECT_MULTIDIM_ELEM(VRiesz,n)*DIRECT_MULTIDIM_ELEM(VRiesz,n);
+		DIRECT_MULTIDIM_ELEM(amplitude,n) = sqrt(DIRECT_MULTIDIM_ELEM(amplitude,n));
+	}
 
 
 }

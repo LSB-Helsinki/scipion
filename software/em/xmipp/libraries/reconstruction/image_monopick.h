@@ -73,7 +73,7 @@ public:
 
     /* Mogonogenid amplitud of a volume, given an input volume,
      * the monogenic amplitud is calculated and low pass filtered at frequency w1*/
-    void amplitudeMonogenicSignal3D(const MultidimArray<double> &vol,
+    void amplitudeMonogenicSignal(const MultidimArray<double> &vol,
     		MultidimArray< std::complex<double> > &myfftV,
     		MultidimArray<double> &amplitude);
     void resolution2eval(int &count_res, double step,
@@ -93,7 +93,7 @@ public:
 	FourierFilter lowPassFilter, FilterBand;
 	bool halfMapsGiven;
 	Image<double> Vfiltered, VresolutionFiltered;
-	Matrix1D<double> freq_fourier;
+	Matrix1D<double> freq_fourier, freq_fourierUX, freq_fourierUY;
 	Matrix2D<double> resolutionMatrix, maskMatrix;
 };
 //@}
