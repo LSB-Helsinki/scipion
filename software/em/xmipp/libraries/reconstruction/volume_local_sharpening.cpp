@@ -363,7 +363,7 @@ void ProgLocSharpening::run()
 
                 if (i==1 && lambda==1)
                 {
-                	lambda=(normOrig/norm)/12;
+                	lambda=(normOrig/norm)/10;
                 }
                	std::cout << "iteration "<< i << "  lambda  " << lambda << std::endl;
 
