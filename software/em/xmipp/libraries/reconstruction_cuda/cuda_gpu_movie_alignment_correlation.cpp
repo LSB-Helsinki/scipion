@@ -186,13 +186,13 @@ void applyGeometryKernel(T x, T y,
 }
 
 
-template void applyGeometryGPU(int SplineDegree,
+template void applyGeometry_2D_S3_wrap(int SplineDegree,
         MultidimArray<float>& __restrict__ result,
         const MultidimArray<float>& __restrict__ V1,
         const Matrix2D<float> &A, bool inv,
         bool wrap, float outside, MultidimArray<float> *BcoeffsPtr);
 template<typename T>
-void applyGeometryGPU(int SplineDegree,
+void applyGeometry_2D_S3_wrap(int SplineDegree,
                    MultidimArray<T>& __restrict__ result,
                    const MultidimArray<T>& __restrict__ V1,
                    const Matrix2D<T> &A, bool inv,
@@ -230,8 +230,6 @@ void applyGeometryGPU(int SplineDegree,
 
 	printf("initValues %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 
-    if (V1.getDim() == 2)
-    {
         // 2D transformation
         T xShift=MAT_ELEM(Aref,0,2);
         T yShift=MAT_ELEM(Aref,1,2);
@@ -309,7 +307,6 @@ void applyGeometryGPU(int SplineDegree,
 
 
     }
-   }
 
 
 

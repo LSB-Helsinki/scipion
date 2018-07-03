@@ -97,6 +97,7 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 	int j = 0;
 	int n = 0;
 	Ninitial = N = 0;
+	GeoTransformer transformer;
 	FOR_ALL_OBJECTS_IN_METADATA(movie)
 	{
 		if (n >= this->nfirstSum && n <= this->nlastSum) {

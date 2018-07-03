@@ -6,7 +6,7 @@
 #include "data/transformations.h"
 
 template<typename T>
-void applyGeometryGPU(int SplineDegree,
+void applyGeometry_2D_S3_wrap(int SplineDegree,
                    MultidimArray<T>& __restrict__ V2,
                    const MultidimArray<T>& __restrict__ V1,
                    const Matrix2D<T> &A, bool inv,
