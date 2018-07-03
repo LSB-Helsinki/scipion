@@ -10,13 +10,40 @@
 #define BLOCK_DIM_X 32
 #define TILE 8
 
-
+__device__
+float bspline03(float x){
+	float Argument = fabsf(x);
+	if (Argument < 1.f)
+		return Argument * Argument * (Argument - 2.f) * 0.5f + 2.f / 3.f;
+	else if (Argument < 2.f)
+	{
+		Argument -= 2.f;
+		return Argument * Argument * Argument * (-1.f / 6.f);
+	}
+	else
+		return 0.f;
+}
 
 __device__
-double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int yinit, int xdim, int ydim, double* data)
+double bspline03(double x){
+	double Argument = fabs(x);
+	if (Argument < 1.0)
+		return Argument * Argument * (Argument - 2.0) * 0.5 + 2.0 / 3.0;
+	else if (Argument < 2.0)
+	{
+		Argument -= 2.0;
+		return Argument * Argument * Argument * (-1.0 / 6.0);
+	}
+	else
+		return 0.0;
+}
+
+template<typename T>
+__device__
+T interpolatedElementBSpline2D_Degree3(T x, T y, int xinit, int yinit, int xdim, int ydim, T* data)
 {
 	bool	firstTime=true;			// Inner loop first time execution flag.
-	double	*ref;
+	T	*ref;
 
 	// Logical to physical
 	y -= yinit;
@@ -27,11 +54,11 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 	int m1 = (int)ceil(y - 2);
 	int m2 = m1 + 3;
 
-	double columns = 0.0;
-	double aux;
+	T columns = 0.0;
+	T aux;
 
 	int		equivalent_l_Array[LOOKUP_TABLE_LEN]; // = new int [l2 - l1 + 1];
-	double 	aux_Array[LOOKUP_TABLE_LEN];// = new double [l2 - l1 + 1];
+	T 	aux_Array[LOOKUP_TABLE_LEN];// = new double [l2 - l1 + 1];
 
 	for (int m = m1; m <= m2; m++)
 	{
@@ -40,7 +67,7 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 			equivalent_m=-m-1;
 		else if (m>=ydim)
 			equivalent_m=2*ydim-m-1;
-		double rows = 0.0;
+		T rows = 0.0;
 		int	index=0;
 //		ref = &DIRECT_A2D_ELEM(*this, equivalent_m,0);
 		ref = data + (equivalent_m*xdim);
@@ -50,7 +77,7 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 			// Check if it is first time executing inner loop.
 			if (firstTime)
 			{
-				double xminusl = x - (double) l;
+				T xminusl = x - (T) l;
 				equivalent_l=l;
 				if (l<0)
 				{
@@ -62,7 +89,7 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 				}
 
 				equivalent_l_Array[index] = equivalent_l;
-				BSPLINE03(aux,xminusl);
+				aux = bspline03(xminusl);
 				aux_Array[index] = aux;
 				index++;
 			}
@@ -74,15 +101,15 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 			}
 
 			//double Coeff = DIRECT_A2D_ELEM(*this, equivalent_m,equivalent_l);
-			double Coeff = ref[equivalent_l];
+			T Coeff = ref[equivalent_l];
 			rows += Coeff * aux;
 		}
 
 		// Set first time inner flag is executed to false.
 		firstTime = false;
 
-		double yminusm = y - (double) m;
-		BSPLINE03(aux,yminusm);
+		T yminusm = y - (T) m;
+		aux = bspline03(yminusm);
 		columns += rows * aux;
 	}
 
@@ -94,12 +121,12 @@ double interpolatedElementBSpline2D_Degree3(double x, double y, int xinit, int y
 
 // explicit instatiation to avoid linking issues
 //template void applyGeometryGPU<float>(int, MultidimArray<double>&, MultidimArray<double> const&, Matrix2D<double> const&, bool, bool, double, MultidimArray<double>*);
-
+template<typename T>
 __global__
-void applyGeometryKernel(double x, double y,
-		bool wrap, double minxpp, double maxxpp, double minypp, double maxypp,
-		double minxp, double maxxp, double minyp, double maxyp, double xShift,
-		double yShift, float* data, int xdim, int ydim, int xinit, int yinit, double* coefs,
+void applyGeometryKernel(T x, T y,
+		bool wrap, T minxpp, T maxxpp, T minypp, T maxypp,
+		T minxp, T maxxp, T minyp, T maxyp, T xShift,
+		T yShift, T* data, int xdim, int ydim, int xinit, int yinit, T* coefs,
 		int coefsXDim, int coefsYDim) {
 
 	// assign pixel to thread
@@ -116,8 +143,8 @@ void applyGeometryKernel(double x, double y,
 		// geometrical transformation
 		// they are related by
 		// coords_output(=x,y) = A * coords_input (=xp,yp)
-		double xp = j + xShift + x;
-		double yp = i + yShift + y;
+		T xp = j + xShift + x;
+		T yp = i + yShift + y;
 
 //		printf("init idx: %d idy: %d xp: %f yp: %f\n", idx, idy, xp, yp);
 
@@ -146,7 +173,7 @@ void applyGeometryKernel(double x, double y,
 				// B-spline interpolation
 //				if (xp >=-1 && xp <= 0 && yp >= -2 && yp <= -1) {
 //				}
-					double res = interpolatedElementBSpline2D_Degree3(xp, yp, xinit, yinit, coefsXDim, coefsYDim, coefs);
+					T res = interpolatedElementBSpline2D_Degree3(xp, yp, xinit, yinit, coefsXDim, coefsYDim, coefs);
 					size_t index  = i*xdim+j;
 				data[index] = res;
 //					printf("interpolate %lu : %f (i: %d j: %d xp: %f yp: %f\n", index, res, i, j, xp, yp);
@@ -158,24 +185,30 @@ void applyGeometryKernel(double x, double y,
 //	}
 }
 
+
+template void applyGeometryGPU(int SplineDegree,
+        MultidimArray<float>& __restrict__ result,
+        const MultidimArray<float>& __restrict__ V1,
+        const Matrix2D<float> &A, bool inv,
+        bool wrap, float outside, MultidimArray<float> *BcoeffsPtr);
+template<typename T>
 void applyGeometryGPU(int SplineDegree,
-                   MultidimArray<float>& __restrict__ result,
-                   const MultidimArray<float>& __restrict__ V1,
-                   const Matrix2D<float> &At, bool inv,
-                   bool wrap, float outside, MultidimArray<double> *BcoeffsPtr)
+                   MultidimArray<T>& __restrict__ result,
+                   const MultidimArray<T>& __restrict__ V1,
+                   const Matrix2D<T> &A, bool inv,
+                   bool wrap, T outside, MultidimArray<T> *BcoeffsPtr)
 {
 	clock_t begin = clock();
-     MultidimArray<double> Bcoeffs;
-     static MultidimArray<double> *BcoeffsToUse=NULL;
-    Matrix2D<double> A, Ainv;
-    typeCast(At, A); // FIXME implement properly
-    const Matrix2D<double> * Aptr=&A;
+	MultidimArray<T> Bcoeffs;
+    static MultidimArray<T> *BcoeffsToUse=NULL; // FIXME remove static
+    Matrix2D<T> Ainv;
+    const Matrix2D<T> * Aptr=&A;
     if (!inv)
     {
         Ainv = A.inv();
         Aptr=&Ainv;
     }
-    const Matrix2D<double> &Aref=*Aptr;
+    const Matrix2D<T> &Aref=*Aptr;
 
     // For scalings the output matrix is resized outside to the final
     // size instead of being resized inside the routine with the
@@ -200,22 +233,22 @@ void applyGeometryGPU(int SplineDegree,
     if (V1.getDim() == 2)
     {
         // 2D transformation
-        double xShift=MAT_ELEM(Aref,0,2);
-        double yShift=MAT_ELEM(Aref,1,2);
+        T xShift=MAT_ELEM(Aref,0,2);
+        T yShift=MAT_ELEM(Aref,1,2);
 
         // Find center and limits of image
-        double cen_y  = (int)(YSIZE(result) / 2);
-        double cen_x  = (int)(XSIZE(result) / 2);
-        double cen_yp = (int)(YSIZE(V1) / 2);
-        double cen_xp = (int)(XSIZE(V1) / 2);
-        double minxp  = -cen_xp;
-        double minyp  = -cen_yp;
-        double minxpp = minxp-XMIPP_EQUAL_ACCURACY;
-        double minypp = minyp-XMIPP_EQUAL_ACCURACY;
-        double maxxp  = XSIZE(V1) - cen_xp - 1;
-        double maxyp  = YSIZE(V1) - cen_yp - 1;
-        double maxxpp = maxxp+XMIPP_EQUAL_ACCURACY;
-        double maxypp = maxyp+XMIPP_EQUAL_ACCURACY;
+        T cen_y  = (int)(YSIZE(result) / 2);
+        T cen_x  = (int)(XSIZE(result) / 2);
+        T cen_yp = (int)(YSIZE(V1) / 2);
+        T cen_xp = (int)(XSIZE(V1) / 2);
+        T minxp  = -cen_xp;
+        T minyp  = -cen_yp;
+        T minxpp = minxp-XMIPP_EQUAL_ACCURACY;
+        T minypp = minyp-XMIPP_EQUAL_ACCURACY;
+        T maxxp  = XSIZE(V1) - cen_xp - 1;
+        T maxyp  = YSIZE(V1) - cen_yp - 1;
+        T maxxpp = maxxp+XMIPP_EQUAL_ACCURACY;
+        T maxypp = maxyp+XMIPP_EQUAL_ACCURACY;
         size_t Xdim   = XSIZE(V1);
         size_t Ydim   = YSIZE(V1);
 
@@ -226,7 +259,9 @@ void applyGeometryGPU(int SplineDegree,
         		BcoeffsToUse=BcoeffsPtr;
         	else {
         		begin = clock();
-        		produceSplineCoefficients(SplineDegree, Bcoeffs, V1); //Bcoeffs is a single image
+        		MultidimArray<double> tmp;
+        		produceSplineCoefficients(SplineDegree, tmp, V1); //Bcoeffs is a single image
+        		typeCast(tmp, Bcoeffs);
         		printf("produceSplineCoefs%f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
         		BcoeffsToUse = &Bcoeffs;
         	}
@@ -247,19 +282,19 @@ void applyGeometryGPU(int SplineDegree,
         << "(max_xp,max_yp)=(" << maxxp  << "," << maxyp  << ")\n";
 #endif
         // Calculate position of the beginning of the row in the output image
-        double x = -cen_x;
-        double y = -cen_y;
+        T x = -cen_x;
+        T y = -cen_y;
 
         dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
-		dim3 dimGrid(ceil(XSIZE(result)/(float)dimBlock.x), ceil(YSIZE(result)/(float)dimBlock.y));
+		dim3 dimGrid(ceil(XSIZE(result)/(T)dimBlock.x), ceil(YSIZE(result)/(T)dimBlock.y));
 
-		static float* d_data = NULL;
-		size_t bytes = YXSIZE(result) * sizeof(float);
+		static T* d_data = NULL; // FIXME
+		size_t bytes = YXSIZE(result) * sizeof(T);
 		if (NULL == d_data) gpuMalloc((void**) &d_data,bytes);
 //		gpuErrchk(cudaMemcpy(d_data, result.data, bytes, cudaMemcpyHostToDevice));
 //
-		static double* d_coefs = NULL;
-		size_t coefs_bytes = YXSIZE(*BcoeffsToUse) * sizeof(double);
+		static T* d_coefs = NULL; // FIXME
+		size_t coefs_bytes = YXSIZE(*BcoeffsToUse) * sizeof(T);
 		if (NULL == d_coefs) gpuMalloc((void**) &d_coefs, coefs_bytes);
 		gpuErrchk(cudaMemcpy(d_coefs, BcoeffsToUse->data, coefs_bytes, cudaMemcpyHostToDevice));
 

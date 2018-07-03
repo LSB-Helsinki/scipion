@@ -5,12 +5,12 @@
 #include "data/multidim_array.h"
 #include "data/transformations.h"
 
-
+template<typename T>
 void applyGeometryGPU(int SplineDegree,
-                   MultidimArray<float>& __restrict__ V2,
-                   const MultidimArray<float>& __restrict__ V1,
-                   const Matrix2D<float> &A, bool inv,
-                   bool wrap, float outside = 0, MultidimArray<double> *BcoeffsPtr=NULL);
+                   MultidimArray<T>& __restrict__ V2,
+                   const MultidimArray<T>& __restrict__ V1,
+                   const Matrix2D<T> &A, bool inv,
+                   bool wrap, T outside = 0, MultidimArray<T> *BcoeffsPtr=NULL);
 
 
 float* loadToGPU(float* data, size_t items);

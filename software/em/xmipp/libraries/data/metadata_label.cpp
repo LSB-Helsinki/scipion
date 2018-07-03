@@ -465,9 +465,9 @@ void MDObject::getValue(size_t &lv) const
 }
 void MDObject::getValue(float &floatvalue) const
 {
-    std::cerr << "Do not use getValue with floats, use double"<< std::endl;
-    std::cerr << "Floats are banned from metadata class"<< std::endl;
-    exit(1);
+	double tmp;
+	getValue(tmp);
+	floatvalue = (float) tmp;
 }
 void MDObject::getValue(char*  &charvalue) const
 {

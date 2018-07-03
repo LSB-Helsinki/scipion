@@ -1644,7 +1644,7 @@ public:
      * m1.inv(m1_inv);
      * @endcode
      */
-    void inv(Matrix2D<double>& result) const
+    void inv(Matrix2D<T>& result) const
     {
         if (mdimx == 0 || mdimy == 0)
             REPORT_ERROR(ERR_MATRIX_EMPTY, "Inverse: Matrix is empty");
@@ -1669,7 +1669,7 @@ public:
             Matrix1D< double > w;
             svdcmp(*this, u, w, v); // *this = U * W * V^t
 
-            double tol = computeMax() * XMIPP_MAX(mdimx, mdimy) * 1e-14;
+            T tol = computeMax() * XMIPP_MAX(mdimx, mdimy) * 1e-14;
 
             // Compute W^-1
             bool invertible = false;
@@ -1732,9 +1732,9 @@ public:
 
     /** Inverse of a matrix
      */
-    Matrix2D<double> inv() const
+    Matrix2D<T> inv() const
     {
-        Matrix2D<double> result;
+        Matrix2D<T> result;
         inv(result);
 
         return result;

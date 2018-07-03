@@ -92,7 +92,6 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 		size_t& Ninitial, Image<T>& averageMicrograph, size_t& N) {
 	// Apply shifts and compute average
 	Image<T> frame, croppedFrame, reducedFrame, shiftedFrame;
-	Matrix1D<double> shiftDouble(2);
 	Matrix1D<T> shift(2);
 	FileName fnFrame;
 	int j = 0;
@@ -102,15 +101,11 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 	{
 		if (n >= this->nfirstSum && n <= this->nlastSum) {
 			movie.getValue(MDL_IMAGE, fnFrame, __iter.objId);
-			movie.getValue(MDL_SHIFT_X, XX(shiftDouble), __iter.objId);
-			movie.getValue(MDL_SHIFT_Y, YY(shiftDouble), __iter.objId);
-
-			typeCast(shiftDouble, shift); // FIXME
+			movie.getValue(MDL_SHIFT_X, XX(shift), __iter.objId);
+			movie.getValue(MDL_SHIFT_Y, YY(shift), __iter.objId);
 
 			std::cout << fnFrame << " shiftX=" << XX(shift) << " shiftY="
 					<< YY(shift) << std::endl;
-			std::cout << fnFrame << " shiftX=" << XX(shiftDouble) << " shiftY="
-					<< YY(shiftDouble) << std::endl;
 			clock_t begin = clock();
 			frame.read(fnFrame);
 			if (XSIZE(dark()) > 0)
@@ -167,7 +162,7 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 					translation2DMatrix(shift, tmp, true);
 					printf("pred applyGeomtery %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 					begin = clock();
-					applyGeometry(this->BsplineOrder, shiftedFrame(), croppedFrame(), tmp, IS_INV, WRAP);
+					applyGeometryGPU(this->BsplineOrder, shiftedFrame(), croppedFrame(), tmp, IS_INV, WRAP);
 					printf("applyGeomtery %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 					begin = clock();
 				}
