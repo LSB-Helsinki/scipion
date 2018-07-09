@@ -97,7 +97,7 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 	int j = 0;
 	int n = 0;
 	Ninitial = N = 0;
-	GeoTransformer transformer;
+	GeoTransformer<T> transformer;
 	FOR_ALL_OBJECTS_IN_METADATA(movie)
 	{
 		if (n >= this->nfirstSum && n <= this->nlastSum) {
@@ -163,7 +163,8 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::applyS
 					translation2DMatrix(shift, tmp, true);
 					printf("pred applyGeomtery %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 					begin = clock();
-					applyGeometryGPU(this->BsplineOrder, shiftedFrame(), croppedFrame(), tmp, IS_INV, WRAP);
+					transformer.initLazy(croppedFrame().xdim, croppedFrame().ydim);
+					transformer.applyGeometry(this->BsplineOrder, shiftedFrame(), croppedFrame(), tmp, IS_INV, WRAP);
 					printf("applyGeomtery %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 					begin = clock();
 				}

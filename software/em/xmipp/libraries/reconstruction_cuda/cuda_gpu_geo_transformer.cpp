@@ -1,19 +1,22 @@
 
 #include "cuda_gpu_geo_transformer.h"
+#include "cuda_utils.h"
 #include <cuda_runtime_api.h>
+#include "cuda_gpu_geo_transformer_cu.cpp"
+
+template class GeoTransformer<float>;
 
 template<typename T>
 void GeoTransformer<T>::release() {
-	cudaFree(d_coefs);
 	cudaFree(d_in);
 	cudaFree(d_out);
 	cudaFree(d_trInv);
-	d_coefs = d_in = d_out = d_trInv = NULL;
+	d_in = d_out = d_trInv = NULL;
 	isReady = false;
 }
 
 template<typename T>
-void GeoTransformer<T>::init(int splineDegree, size_t x, size_t y, size_t z) {
+void GeoTransformer<T>::init(size_t x, size_t y, size_t z) {
 	release();
 
 	this->X = x;
@@ -21,11 +24,34 @@ void GeoTransformer<T>::init(int splineDegree, size_t x, size_t y, size_t z) {
 	this->Z = z;
 
 	size_t matSize = (0 == z) ? 9 : 16;
-	gpuErrchk(gpuMalloc((void**) &d_trInv, matSize * sizeof(T)));
-	gpuErrchk(gpuMalloc((void**) &d_in, x * y * z * sizeof(T)));
-	gpuErrchk(gpuMalloc((void**) &d_out, x * y * z * sizeof(T)));
+	gpuErrchk(cudaMalloc((void**) &d_trInv, matSize * sizeof(T)));
+	gpuErrchk(cudaMalloc((void**) &d_in, x * y * z * sizeof(T)));
+	gpuErrchk(cudaMalloc((void**) &d_out, x * y * z * sizeof(T)));
 
 	isReady = true;
+}
+
+template<typename T>
+void GeoTransformer<T>::initLazy(size_t x, size_t y, size_t z) {
+	if (!isReady) {
+		init(x, y, z);
+	}
+}
+
+template void GeoTransformer<float>::applyGeometry<float, float>(int splineDegree,
+        MultidimArray<float> &output,
+        const MultidimArray<float> &input,
+        const Matrix2D<float> &transform, bool isInv,
+        bool wrap, float outside);
+
+template<typename T>
+template<typename T_IN, typename T_MAT>
+void GeoTransformer<T>::applyGeometry(int splineDegree,
+	                   MultidimArray<T> &output,
+	                   const MultidimArray<T_IN> &input,
+	                   const Matrix2D<T_MAT> &transform, bool isInv,
+	                   bool wrap, T outside) {
+	applyGeometry<T_IN, T_MAT, T_IN>(splineDegree, output, input, transform, isInv, wrap, outside, NULL);
 }
 
 template<typename T>
@@ -35,21 +61,22 @@ void GeoTransformer<T>::applyGeometry(int splineDegree,
 	                   const MultidimArray<T_IN> &input,
 	                   const Matrix2D<T_MAT> &transform, bool isInv,
 	                   bool wrap, T outside, const MultidimArray<T_COEFFS> *bCoeffsPtr) {
-	checkRestrictions(output, input, transform);
+	checkRestrictions(splineDegree, output, input, transform);
 	if (transform.isIdentity()) {
 		typeCast(input, output);
 	}
 
 	prepareAndLoadTransform(transform, isInv);
 	prepareAndLoadOutput(output, outside);
-	loadInput(input);
 
-	if (NULL != bCoeffsPtr) {
-		loadCoeffs(*bCoeffsPtr);
-	} else {
-		if (splineDegree > 1) {
-			prepareAndLoadCoeffs(splineDegree);
+	if (splineDegree > 1) {
+		if (NULL != bCoeffsPtr) {
+			loadInput(*bCoeffsPtr);
+		} else {
+			prepareAndLoadCoeffs(splineDegree, input);
 		}
+	} else {
+		loadInput(input);
 	}
 
 	if (input.getDim() == 2) {
@@ -61,11 +88,14 @@ void GeoTransformer<T>::applyGeometry(int splineDegree,
 	} else {
 		throw std::logic_error("Not implemented yet");
 	}
+
+	gpuErrchk(cudaMemcpy(output.data, d_out, output.zyxdim * sizeof(T), cudaMemcpyDeviceToHost));
+
 }
 
 template<typename T>
 template<typename T_MAT>
-void GeoTransformer<T>::prepareTransform(const Matrix2D<T_MAT> &transform, bool isInv) {
+void GeoTransformer<T>::prepareAndLoadTransform(const Matrix2D<T_MAT> &transform, bool isInv) {
 	Matrix2D<T_MAT> trInv = isInv ? transform : transform.inv();
 	Matrix2D<T>tmp;
 	typeCast(trInv, tmp);
@@ -73,32 +103,44 @@ void GeoTransformer<T>::prepareTransform(const Matrix2D<T_MAT> &transform, bool 
 }
 
 template<typename T>
-template<typename T_COEFFS>
-void GeoTransformer<T>::loadCoeffs(const T_COEFFS &bCoeffsPtr) {
-	MultidimArray<T> tmp;
-	typeCast(bCoeffsPtr, tmp);
-
-	size_t bytes = tmp.yxdim * sizeof(T);
-	if (NULL == d_coefs) gpuErrchk(gpuMalloc((void**) &d_coefs, bytes));
-	gpuErrchk(cudaMemcpy(d_coefs, tmp.data, bytes, cudaMemcpyHostToDevice));
-}
-
-template<typename T>
 template<typename T_IN>
 void GeoTransformer<T>::prepareAndLoadCoeffs(int splineDegree, const MultidimArray<T_IN> &input) {
 	MultidimArray<double> tmp; // FIXME this should be T, once produceSplineCoefficients can handle it
-	produceSplineCoefficients(SplineDegree, tmp, input);
-	loadCoeffs(tmp);
+	produceSplineCoefficients(splineDegree, tmp, input);
+	loadInput(tmp);
 }
 
 template<typename T>
-void GeoTransformer<T>::applyGeometry_2D_wrap(int SplineDegree) {
-	std::cout << "I'm here" << std::endl;
+void GeoTransformer<T>::applyGeometry_2D_wrap(int splineDegree) {
+	T cen_yp = (int)(Y / 2);
+	T cen_xp = (int)(X / 2);
+	T minxp  = -cen_xp;
+	T minyp  = -cen_yp;
+	T minxpp = minxp-XMIPP_EQUAL_ACCURACY;
+	T minypp = minyp-XMIPP_EQUAL_ACCURACY;
+	T maxxp  = X - cen_xp - 1;
+	T maxyp  = Y - cen_yp - 1;
+	T maxxpp = maxxp+XMIPP_EQUAL_ACCURACY;
+	T maxypp = maxyp+XMIPP_EQUAL_ACCURACY;
+
+    dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
+	dim3 dimGrid(ceil(X/(T)dimBlock.x), ceil(Y/(T)dimBlock.y));
+
+	switch(splineDegree) {
+	case 3:
+		applyGeometryKernel_2D_wrap<T, 3,true><<<dimGrid, dimBlock>>>(d_trInv,
+				minxpp, maxxpp, minypp, maxypp,
+				minxp, maxxp, minyp, maxyp,
+				d_out, (int)X, (int)Y, d_in, (int)X, (int)Y);
+		break;
+	default:
+		throw std::logic_error("not implemented");
+	}
 }
 
 template<typename T>
 template<typename T_IN>
-void GeoTransformer<T>::loadInput(MultidimArray<T_IN> &input) {
+void GeoTransformer<T>::loadInput(const MultidimArray<T_IN> &input) {
 	MultidimArray<T> tmp;
 	typeCast(input, tmp);
 	gpuErrchk(cudaMemcpy(d_in, tmp.data, tmp.zyxdim * sizeof(T), cudaMemcpyHostToDevice));
@@ -122,19 +164,21 @@ void GeoTransformer<T>::prepareAndLoadOutput(MultidimArray<T> &output, T outside
 
 template<typename T>
 template<typename T_IN, typename T_MAT>
-bool GeoTransformer<T>::checkRestrictions(MultidimArray<T> &output,
+void GeoTransformer<T>::checkRestrictions(int splineDegree, MultidimArray<T> &output,
         const MultidimArray<T_IN> &input,
         const Matrix2D<T_MAT> &transform) {
-	static_assert(isReady, "Transformer is not ready yet.");
-	static_assert(input.xdim, "Input is empty");
-	static_assert((X == input.xdim) && (Y == input.ydim) && (Z == inpyut.zdim),
-			"Transformer has been initialized for different size of the input");
-	static_assert(&input == (MultidimArray<T_INT>*)&output,
-			"Input array cannot be the same as output array");
-	static_assert((input.getDim() == 2)
-			&& ((transform.Xdim() != 3) || (transform.Ydim() != 3)),
-			"2D transformation matrix is not 3x3");
-	static_assert((input.getDim() == 3)
-				&& ((transform.Xdim() != 4) || (transform.Ydim() != 4)),
-				"3D transformation matrix is not 4x4");
+	if (!isReady)
+		throw std::logic_error("Transformer is not ready yet.");
+	if (!input.xdim)
+		throw std::invalid_argument("Input is empty");
+	if ((X != input.xdim) || (Y != input.ydim) || (Z != input.zdim))
+		throw std::logic_error("Transformer has been initialized for different size of the input");
+	if (&input == (MultidimArray<T_IN>*)&output)
+		throw std::invalid_argument("Input array cannot be the same as output array");
+	if ((input.getDim() == 2)
+			&& ((transform.Xdim() != 3) || (transform.Ydim() != 3)))
+		throw std::invalid_argument("2D transformation matrix is not 3x3");
+	if ((input.getDim() == 3)
+			&& ((transform.Xdim() != 4) || (transform.Ydim() != 4)))
+		throw std::invalid_argument("3D transformation matrix is not 4x4");
 }
