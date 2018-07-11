@@ -190,7 +190,7 @@ def CheckMPI(context, mpi_inc, mpi_libpath, mpi_lib, mpi_cc, mpi_cxx, mpi_link, 
 # http://www.scons.org/wiki/SConsMethods/SideEffect), and does not try
 # to do one step while the previous one is still running in the background.
 
-def createCudaLinkBuilder(env):
+def createCudaCompilerBuilder(env):
     """This is a copy of the StaticLibrary
     Builder.
     It's purpose is to, as additional step after compilation,
@@ -201,20 +201,21 @@ def createCudaLinkBuilder(env):
     """
 
     try:
-        static_lib = env['BUILDERS']['CudaLinkBuilder']
+        static_lib = env['BUILDERS']['CudaCompilerBuilder']
     except KeyError:
-        action_list = ["nvcc -Xcompiler -fPIC -dlink -Wno-deprecated-gpu-targets -o software/em/xmipp/libraries/reconstruction_cuda/build_hack.o $SOURCES"]
-        action_list.append(SCons.Action.Action("$ARCOM", "$ARCOMSTR"))
-    if env.Detect('ranlib'):
-        ranlib_action = SCons.Action.Action("$RANLIBCOM", "$RANLIBCOMSTR")
-        action_list.append(ranlib_action)
-        static_lib = SCons.Builder.Builder(action = action_list,
+        #action_list = ["nvcc -Xcompiler -fPIC -dlink -Wno-deprecated-gpu-targets $SOURCES -lcudadevrt -o software/em/xmipp/libraries/reconstruction_cuda/build_hack.o "]
+        #action_list.append("mv software/em/xmipp/libraries/reconstruction_cuda/build_hack1.o software/em/xmipp/libraries/reconstruction_cuda/build_hack.o")
+        #action_list.append(SCons.Action.Action("$ARCOM", "$ARCOMSTR"))
+    #if env.Detect('ranlib'):
+        #ranlib_action = SCons.Action.Action("$RANLIBCOM", "$RANLIBCOMSTR")
+        #action_list.append(ranlib_action)
+        static_lib = SCons.Builder.Builder(action = [],
                                            emitter = '$LIBEMITTER',
                                            prefix = '$LIBPREFIX',
                                            suffix = '$LIBSUFFIX',
                                            src_suffix = '$OBJSUFFIX',
                                            src_builder = 'StaticObject')
-        env['BUILDERS']['CudaLinkBuilder'] = static_lib
+        env['BUILDERS']['CudaCompilerBuilder'] = static_lib
 
     return static_lib
 
@@ -239,6 +240,7 @@ def addCppLibrary(env, name, dirs=[], tars=[], untarTargets=['configure'], patte
         _libs.append("cuda")
         _libs.append("cufft")
         _libpath.append(env['CUDA_LIB'])
+        _libs.append('cudadevrt')
     if name == "XmippParallel":
         _libs.append("XmippReconsAdaptCuda")
     _incs = list(incs)
@@ -317,6 +319,12 @@ def addCppLibrary(env, name, dirs=[], tars=[], untarTargets=['configure'], patte
 
     return lastTarget
 
+
+def PhonyTarget(target, action):
+        phony = Environment(ENV = os.environ,
+                            BUILDERS = { 'phony' : Builder(action = action) })
+        AlwaysBuild(phony.phony(target = target, source = 'SConstruct'))
+
 def addCppLibraryCuda(env, name, dirs=[], tars=[], untarTargets=['configure'], patterns=[], incs=[],
                   libs=[], prefix=None, suffix=None, installDir=None, libpath=['lib'], deps=[],
                   mpi=False, cuda=False, default=True, target=None):
@@ -346,6 +354,8 @@ def addCppLibraryCuda(env, name, dirs=[], tars=[], untarTargets=['configure'], p
     for d, p in izip(dirs, patterns):
         sources += glob(join(env['PACKAGE']['SCONSCRIPT'], d, p))
 
+    
+
     if not sources and env.TargetInBuild(name):
         Exit('No sources found for Library: %s. Exiting!!!' % name)
 
@@ -365,52 +375,63 @@ def addCppLibraryCuda(env, name, dirs=[], tars=[], untarTargets=['configure'], p
                    'CXX': env['MPI_CXX'],
                    'LINK': env['MPI_LINKERFORPROGRAMS']}
         env2.PrependENVPath('PATH', env['MPI_BINDIR'])
-
     # AJ
     elif cuda:
         _libs.append(['cudart', 'cublas', 'cufft', 'cuFFTAdvisor', 'curand', 'cusparse', 'nvToolsExt'])
         _incs.append(env['NVCC_INCLUDE'])
         _libpath.append(env['NVCC_LIBDIR'])
         mpiArgs = {'CC': env['NVCC'], 'CXX': env['NVCC'], 'LINK': env['LINKERFORPROGRAMS']}
-        createCudaLinkBuilder(env2)
+        createCudaCompilerBuilder(env2)
     # FIN AJ
+
+    #PhonyTarget('testuju.txt', 'echo lalalal | tee $TARGET')
+    oFiles = ' '.join([s[0] + ".o" for s in map(os.path.splitext, sources)])
+    # assuming we are in software/em/xmipp folder
+    prefix = 'software/em/xmipp/'
+    #oFilesRel = ' '.join([s.split(prefix)[1] for s in oFiles])
+    linkedFile = prefix + 'libraries/reconstruction_cuda/cuda_all.o'
+    libTmp = prefix + targetName + '.a'
+    #print(oFilesRel)
+    libTarget = 'software/' + targetName + '.a'
+    linkCmd = ' '.join(['nvcc', '-Xcompiler', '-fPIC', '-dlink', '-Wno-deprecated-gpu-targets', oFiles, '-o', linkedFile])
+    arCmd = ' '.join(['ar', 'rc', libTmp, oFiles, linkedFile])
+    ranLibCmd = ' '.join(['ranlib', libTmp])
+    cpCmd = ' '.join(['cp', libTmp, libTarget])
+    link = env2.Command(linkedFile, None,'\n'.join(['pwd', linkCmd, arCmd, ranLibCmd, cpCmd]))
+    #link = Command("testuju.txt", '', 'echo ---------test---------- | ls -l > testuju.txt')
+    #SideEffect('dummy', link)
+    #env.Depends(link, library)
+        #env2.AlwaysBuild(link)
+    #cmd = env.Command(target="testTarget.txt", source=None, action="ls -l > $TARGET")
 
     _incs.append(env['CPPPATH'])
     _incs.append('#software/include')
 
-    if cuda: # need to use different builder XXX HACK (see builder for more info)
-        library = env2.CudaLinkBuilder(
-            target=targetName,
-            source=sources,
-            CPPPATH=_incs,
-            LIBPATH=_libpath,
-            LIBS=_libs,
-            SHLIBPREFIX=prefix,
-            SHLIBSUFFIX=suffix,
-            CXXFLAGS=env['CXXFLAGS'],
-            LINKFLAGS=env['LINKFLAGS'],
-            **mpiArgs)
-        env2.AlwaysBuild(library)
-    else:
-        library = env2.Library(
-            target=targetName,
-            source=sources,
-            CPPPATH=_incs,
-            LIBPATH=_libpath,
-            LIBS=_libs,
-            SHLIBPREFIX=prefix,
-            SHLIBSUFFIX=suffix,
-            CXXFLAGS=env['CXXFLAGS'],
-            LINKFLAGS=env['LINKFLAGS'],
-            **mpiArgs)
+    library = env2.CudaCompilerBuilder(
+        target=targetName,
+        source=sources,
+        CPPPATH=_incs,
+        LIBPATH=_libpath,
+        LIBS=_libs,
+        SHLIBPREFIX=prefix,
+        SHLIBSUFFIX=suffix,
+        CXXFLAGS=env['CXXFLAGS'],
+        LINKFLAGS=env['LINKFLAGS'],
+        **mpiArgs)
 
     SideEffect('dummy', library)
     env.Depends(library, sources)
+    env.Depends(link, sources)
+
+    env.Depends(link, library)
+
+#    SideEffect('dummy', link)
+#    env.Depends(link, library)
 
     if installDir:
         install = env.Install(installDir, library)
         SideEffect('dummy', install)
-        lastTarget = install
+        lastTarget = link
     else:
         lastTarget = library
     env.Default(lastTarget)
