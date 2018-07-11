@@ -99,7 +99,6 @@ void gpuCopyFromCPUToGPU(void* data, void* d_data, size_t Nbytes)
 
 void gpuCopyFromGPUToCPU(void* d_data, void* data, size_t Nbytes)
 {
-	printf("copying %d bytes from %p to %p\n", Nbytes, d_data, data);
 	gpuErrchk(cudaMemcpy(data, d_data, Nbytes, cudaMemcpyDeviceToHost));
 }
 

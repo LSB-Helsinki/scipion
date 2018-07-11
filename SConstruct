@@ -397,7 +397,7 @@ def addCppLibraryCuda(env, name, dirs=[], tars=[], untarTargets=['configure'], p
     arCmd = ' '.join(['ar', 'rc', libTmp, oFiles, linkedFile])
     ranLibCmd = ' '.join(['ranlib', libTmp])
     cpCmd = ' '.join(['cp', libTmp, libTarget])
-    link = env2.Command(linkedFile, None,'\n'.join(['pwd', linkCmd, arCmd, ranLibCmd, cpCmd]))
+    link = env2.Command(linkedFile, None,'\n'.join([linkCmd, arCmd, ranLibCmd, cpCmd]))
     #link = Command("testuju.txt", '', 'echo ---------test---------- | ls -l > testuju.txt')
     #SideEffect('dummy', link)
     #env.Depends(link, library)

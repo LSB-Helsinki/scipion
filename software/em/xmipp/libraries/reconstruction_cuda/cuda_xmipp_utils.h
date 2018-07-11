@@ -106,7 +106,6 @@ public:
 
 		clear();
 		setDims(_Xdim, _Ydim, _Zdim, _Ndim);
-		printf("allocating %p of size %lu (%d x %d )\n", d_data, nzyxdim * sizeof(T) / 1048576, nzyxdim, sizeof(T));
         gpuMalloc((void**) &d_data,nzyxdim*sizeof(T));
 
     }
@@ -119,7 +118,6 @@ public:
 	void clear()
 	{
 		if (d_data!=NULL){
-			printf("freeing %p\n", d_data);
 			gpuFree((void*) d_data);
 
 		}
@@ -134,7 +132,6 @@ public:
 
 	void copyToGpu(T* data)
 	{
-		std::cout << "copying " << nzyxdim << "x" << sizeof(T) << " (" << nzyxdim*sizeof(T) << ") bytes to GPU" << std::endl;
 		gpuCopyFromCPUToGPU((void *)data, (void *)d_data, nzyxdim*sizeof(T));
 	}
 

@@ -186,22 +186,11 @@ void ProgMovieAlignmentCorrelationGPU<T>::setSizes(Image<T> frame,
 			inputOptSizeX, inputOptSizeY, maxFilterSize);
 
 	inputOptSizeFFTX = inputOptSizeX / 2 + 1;
-	if (this->verbose)
-		printf("best FFT for input is %d images of %d x %d (%d)\n",
-			inputOptBatchSize, inputOptSizeX, inputOptSizeY, inputOptSizeFFTX);
 
-
-	if (this->verbose)
-		printf("benchmarking for %lu imgs of %d x %d, %d of Memory (out of %lu)\n",
-			noOfCorrelations, this->newXdim, this->newYdim, correlationBufferSizeMB * 2, availableMemMB);
 	getBestSize(noOfCorrelations, this->newXdim, this->newYdim, croppedOptBatchSize,
 			croppedOptSizeX, croppedOptSizeY, correlationBufferSizeMB * 2);
 
 	croppedOptSizeFFTX = croppedOptSizeX / 2 + 1;
-	if (this->verbose)
-		printf("best FFT for cropped imgs is %d images of %d x %d (%d)\n",
-			croppedOptBatchSize, croppedOptSizeX, croppedOptSizeY,
-			croppedOptSizeFFTX);
 
 	T corrSizeMB = ((size_t)croppedOptSizeFFTX * croppedOptSizeY * sizeof(std::complex<T>)) / (1024 * 1024.);
 	correlationBufferImgs = std::ceil(correlationBufferSizeMB / corrSizeMB);

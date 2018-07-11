@@ -1,9 +1,8 @@
 
 #include <cuda_runtime_api.h>
-#include "reconstruction_cuda/cuda_utils.h" // cannot be in header as it includes cuda headers
+#include "reconstruction_cuda/cuda_utils.h"
 #include "advisor.h"
 #include "cudaUtils.h"
-#include "cuda_gpu_reconstruct_fourier.h"
 #include "cuda_gpu_movie_alignment_correlation.h"
 #include "reconstruction_cuda/cuda_basic_math.h"
 
@@ -230,8 +229,6 @@ void computeCorrelations(int N, double maxShift, void* d_in1, size_t in1Size, vo
 	dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
 	dim3 dimGridCorr(ceil(fftSizeX/(float)dimBlock.x), ceil(imgSizeY/(float)dimBlock.y));
 	dim3 dimGridCrop(ceil(cropSize/(float)dimBlock.x), ceil(cropSize/(float)dimBlock.y));
-
-	size_t singleImgPixels = cropSize * cropSize;
 
 	size_t batchCounter = 0;
 	size_t counter = 0;
