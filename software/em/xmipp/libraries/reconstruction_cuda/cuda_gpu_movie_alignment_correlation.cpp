@@ -9,16 +9,17 @@
 #define BLOCK_DIM_X 32
 #define TILE 8
 
+template<typename T, typename U>
 __global__
-void applyFilterAndCrop(const float2* __restrict__ src, float2* dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
-		const float* __restrict__ filter) {
+void applyFilterAndCrop(const U* __restrict__ src, U* dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
+		const T* __restrict__ filter) {
 	// assign pixel to thread
 	int idx = blockIdx.x*blockDim.x + threadIdx.x;
 	int idy = blockIdx.y*blockDim.y + threadIdx.y;
 
 	if (idx >= newX || idy >= newY ) return;
 	size_t fIndex = idy*newX + idx; // index within single image
-	float lpfw = filter[fIndex];
+	T lpfw = filter[fIndex];
 	int yhalf = (newY+1)/2;
 
 	size_t origY = (idy <= yhalf) ? idy : (oldY - (newY-idy)); // take top N/2+1 and bottom N/2 lines
@@ -29,21 +30,25 @@ void applyFilterAndCrop(const float2* __restrict__ src, float2* dest, int noOfIm
 	}
 }
 
-std::complex<float>* performFFTAndScale(float* inOutData, int noOfImgs,
+template std::complex<float>* performFFTAndScale<float>(float* inOutData, int noOfImgs,
 		int inSizeX, int inSizeY, int inBatch,
-		int outSizeX, int outSizeY,  float* d_filter) {
+		int outSizeX, int outSizeY,  float* d_filter);
+template<typename T>
+std::complex<T>* performFFTAndScale(T* inOutData, int noOfImgs,
+		int inSizeX, int inSizeY, int inBatch,
+		int outSizeX, int outSizeY,  T* d_filter) {
 	mycufftHandle handle;
 	int counter = 0;
-	std::complex<float>* h_result = (std::complex<float>*)inOutData;
-	GpuMultidimArrayAtGpu<float> imagesGPU(inSizeX, inSizeY, 1, inBatch);
-	GpuMultidimArrayAtGpu<std::complex<float> > resultingFFT;
+	std::complex<T>* h_result = (std::complex<T>*)inOutData;
+	GpuMultidimArrayAtGpu<T> imagesGPU(inSizeX, inSizeY, 1, inBatch);
+	GpuMultidimArrayAtGpu<std::complex<T> > resultingFFT;
 
 	while (counter < noOfImgs) {
 		int imgToProcess = std::min(inBatch, noOfImgs - counter);
-		float* h_imgLoad = inOutData + counter * inSizeX * inSizeY;
-		size_t bytes = imgToProcess * inSizeX * inSizeY * sizeof(float);
+		T* h_imgLoad = inOutData + counter * inSizeX * inSizeY;
+		size_t bytes = imgToProcess * inSizeX * inSizeY * sizeof(T);
 		gpuErrchk(cudaMemcpy(imagesGPU.d_data, h_imgLoad, bytes, cudaMemcpyHostToDevice));
-		std::complex<float>* h_imgStore = h_result + counter * outSizeX * outSizeY;
+		std::complex<T>* h_imgStore = h_result + counter * outSizeX * outSizeY;
 		processInput(imagesGPU, resultingFFT, handle, inSizeX, inSizeY, imgToProcess, outSizeX, outSizeY, d_filter, h_imgStore);
 		counter += inBatch;
 	}
@@ -76,41 +81,52 @@ void getBestSize(int imgsToProcess, int origXSize, int origYSize, int &batchSize
 	results->at(0)->print(stdout);
 }
 
-float* loadToGPU(float* data, size_t items) {
-	float* d_data;
-	size_t bytes = items * sizeof(float);
+template float* loadToGPU<float>(float* data, size_t items);
+template<typename T>
+T* loadToGPU(T* data, size_t items) {
+	T* d_data;
+	size_t bytes = items * sizeof(T);
 	gpuMalloc((void**) &d_data,bytes);
 	gpuErrchk(cudaMemcpy(d_data, data, bytes, cudaMemcpyHostToDevice));
 	return d_data;
 }
 
-void release(float* data) {
+template void release<float>(float* data);
+template<typename T>
+void release(T* data) {
 	gpuErrchk(cudaFree(data));
 }
 
-void processInput(GpuMultidimArrayAtGpu<float>& imagesGPU,
-		GpuMultidimArrayAtGpu<std::complex<float> >& resultingFFT,
+template<typename T>
+void processInput(GpuMultidimArrayAtGpu<T>& imagesGPU,
+		GpuMultidimArrayAtGpu<std::complex<T> >& resultingFFT,
 		mycufftHandle& handle,
 		int inSizeX, int inSizeY, int inBatch,
-		int outSizeX, int outSizeY, float* d_filter, std::complex<float>* result) {
+		int outSizeX, int outSizeY, T* d_filter, std::complex<T>* result) {
 	imagesGPU.fft(resultingFFT, handle);
 
 	// crop FFT, reuse already allocated space
-	size_t noOfCroppedFloats = inBatch * outSizeX * outSizeY ; // complex
-	cudaMemset(imagesGPU.d_data, 0.f, noOfCroppedFloats*sizeof(float2));
+	size_t noOfCroppedItems = inBatch * outSizeX * outSizeY ;
+	size_t bytes =  noOfCroppedItems * sizeof(T) * 2; // complex
+	cudaMemset(imagesGPU.d_data, 0.f, bytes);
 
 	dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
 	dim3 dimGrid(ceil(outSizeX/(float)dimBlock.x), ceil(outSizeY/(float)dimBlock.y));
-	applyFilterAndCrop<<<dimGrid, dimBlock>>>((float2*)resultingFFT.d_data, (float2*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter);
-	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk( cudaDeviceSynchronize() );
+	if (std::is_same<T, float>::value) {
+		applyFilterAndCrop<<<dimGrid, dimBlock>>>((float2*)resultingFFT.d_data, (float2*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter);
+	} else if (std::is_same<T, double>::value) {
+		applyFilterAndCrop<<<dimGrid, dimBlock>>>((double2*)resultingFFT.d_data, (double2*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter);
+	} else {
+		throw std::logic_error("unsupported type");
+	}
 	gpuErrchk( cudaPeekAtLastError() );
 
-	gpuErrchk(cudaMemcpy((void*)result, (void*)imagesGPU.d_data, noOfCroppedFloats*sizeof(float2), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaMemcpy((void*)result, (void*)imagesGPU.d_data, bytes, cudaMemcpyDeviceToHost));
 }
 
+template<typename T>
 __global__
-void correlate(const float2* __restrict__ in1, const float2* __restrict__ in2, float2* correlations, int xDim, int yDim, int noOfImgs,
+void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlations, int xDim, int yDim, int noOfImgs,
 		bool isWithin, int iStart, int iStop, int jStart, int jStop, size_t jSize, size_t offset1, size_t offset2) {
 	// assign pixel to thread
 #if TILE > 1
@@ -123,7 +139,7 @@ void correlate(const float2* __restrict__ in1, const float2* __restrict__ in2, f
 	volatile int idx = blockIdx.x*blockDim.x + threadIdx.x;
 	volatile int idy = blockIdx.y*blockDim.y + threadIdx.y;
 #endif
-	float a = 1-2*((idx+idy)&1); // center FFT
+	int a = 1-2*((idx+idy)&1); // center FFT
 
 	if (idx >= xDim || idy >= yDim ) return;
 	size_t pixelIndex = idy*xDim + idx; // index within single image
@@ -132,7 +148,7 @@ void correlate(const float2* __restrict__ in1, const float2* __restrict__ in2, f
 	int counter = 0;
 	for (int i = iStart; i <= iStop; i++) {
 		int tmpOffset = i * xDim * yDim;
-		float2 tmp = in1[tmpOffset + pixelIndex];
+		T tmp = in1[tmpOffset + pixelIndex];
 		for (int j = isWithin ? i + 1 : 0; j < jSize; j++) {
 			if (!compute) {
 				compute = true;
@@ -141,8 +157,8 @@ void correlate(const float2* __restrict__ in1, const float2* __restrict__ in2, f
 			}
 			if (compute) {
 				int tmp2Offset = j * xDim * yDim;
-				float2 tmp2 = in2[tmp2Offset + pixelIndex];
-				float2 res;
+				T tmp2 = in2[tmp2Offset + pixelIndex];
+				T res;
 				res.x = ((tmp.x*tmp2.x) + (tmp.y*tmp2.y))*(yDim*yDim);
 				res.y = ((tmp.y*tmp2.x) - (tmp.x*tmp2.y))*(yDim*yDim);
 				correlations[counter*xDim*yDim + pixelIndex] = res*a;
@@ -155,8 +171,8 @@ void correlate(const float2* __restrict__ in1, const float2* __restrict__ in2, f
 	}
 }
 
-
-void copyInRightOrder(float* imgs, float* result, int xDim, int yDim, int noOfImgs,
+template<typename T>
+void copyInRightOrder(T* imgs, T* result, int xDim, int yDim, int noOfImgs,
 		bool isWithin, int iStart, int iStop, int jStart, int jStop, size_t jSize, size_t offset1, size_t offset2, size_t maxImgs) {
 	size_t pixelsPerImage =  xDim * yDim;
 	size_t counter = 0;
@@ -179,7 +195,7 @@ void copyInRightOrder(float* imgs, float* result, int xDim, int yDim, int noOfIm
 //				size_t imgs = imgsInLayers + actualJ;
 				gpuErrchk(cudaMemcpy(result + (pixelsPerImage * (imgsInPreviousLayers + imgsInCurrentLayer)),
 					imgs + (counter * pixelsPerImage),
-					toCopy * pixelsPerImage * sizeof(float),
+					toCopy * pixelsPerImage * sizeof(T),
 					cudaMemcpyDeviceToHost));
 				counter += toCopy;
 				break; // skip to next outer iteration
@@ -191,8 +207,9 @@ void copyInRightOrder(float* imgs, float* result, int xDim, int yDim, int noOfIm
 	}
 }
 
+template<typename T>
 __global__
-void cropCenter(const float* __restrict__ in, float* out, int xDim, int yDim, int noOfImgs,
+void cropCenter(const T* __restrict__ in, T* out, int xDim, int yDim, int noOfImgs,
 		int outDim) {
 	// assign pixel to thread
 	int idx = blockIdx.x*blockDim.x + threadIdx.x;
@@ -203,10 +220,10 @@ void cropCenter(const float* __restrict__ in, float* out, int xDim, int yDim, in
 	int inputImgSize = xDim * yDim;
 	int outputImgSize = outDim * outDim;
 
-	int inCenterX = (int)((float) (xDim) / 2.f);
-	int inCenterY = (int)((float) (yDim) / 2.f);
+	int inCenterX = (int)((T) (xDim) / 2.f);
+	int inCenterY = (int)((T) (yDim) / 2.f);
 
-	int outCenter = (int)((float) (outDim) / 2.f);
+	int outCenter = (int)((T) (outDim) / 2.f);
 
 	for (int n = 0; n < noOfImgs; n++) {
 		int iX = idx - outCenter + inCenterX;
@@ -217,11 +234,12 @@ void cropCenter(const float* __restrict__ in, float* out, int xDim, int yDim, in
 	}
 }
 
-void computeCorrelations(int N, double maxShift, void* d_in1, size_t in1Size, void* d_in2, size_t in2Size,
+template<typename T>
+void computeCorrelations(int N, T maxShift, void* d_in1, size_t in1Size, void* d_in2, size_t in2Size,
 		int fftSizeX, int imgSizeX, int imgSizeY, int fftBatchSize, size_t fixmeOffset1, size_t fixmeOffset2,
-		GpuMultidimArrayAtGpu<std::complex<float> >& ffts,
-			GpuMultidimArrayAtGpu<float>& imgs, mycufftHandle& handler,
-			float*& result) {
+		GpuMultidimArrayAtGpu<std::complex<T> >& ffts,
+			GpuMultidimArrayAtGpu<T>& imgs, mycufftHandle& handler,
+			T*& result) {
 	bool isWithin = d_in1 == d_in2; // correlation is done within the same buffer
 
 	int cropSize = maxShift * 2 + 1;
@@ -241,15 +259,22 @@ void computeCorrelations(int N, double maxShift, void* d_in1, size_t in1Size, vo
 			if (counter == fftBatchSize || (isLastIIter && (j == in2Size -1)) ) {
 				// kernel must perform last iteration
 				// compute correlation from input buffers. Result are FFT images
+				if (std::is_same<T, float>::value) {
 				correlate<<<dimGridCorr, dimBlock>>>((float2*)d_in1, (float2*)d_in2,(float2*)ffts.d_data, fftSizeX, imgSizeY, counter,
 						isWithin, origI, i, origJ, j, in2Size, fixmeOffset1, fixmeOffset2);
+				} else if (std::is_same<T, double>::value) {
+					correlate<<<dimGridCorr, dimBlock>>>((double2*)d_in1, (double2*)d_in2,(double2*)ffts.d_data, fftSizeX, imgSizeY, counter,
+											isWithin, origI, i, origJ, j, in2Size, fixmeOffset1, fixmeOffset2);
+				} else {
+					throw std::logic_error("unsupported type");
+				}
 				// convert FFTs to space domain
 				ffts.ifft(imgs, handler);
 				// crop images in space domain, use memory for FFT to avoid realocation
-				cropCenter<<<dimGridCrop, dimBlock>>>((float*)imgs.d_data, (float*)ffts.d_data, imgSizeX, imgSizeY,
+				cropCenter<<<dimGridCrop, dimBlock>>>((T*)imgs.d_data, (T*)ffts.d_data, imgSizeX, imgSizeY,
 						counter, cropSize);
 
-				copyInRightOrder((float*)ffts.d_data, result,
+				copyInRightOrder((T*)ffts.d_data, result,
 						cropSize, cropSize, counter,
 						isWithin, origI, i, origJ, j, in2Size, fixmeOffset1, fixmeOffset2,N);
 
@@ -262,12 +287,16 @@ void computeCorrelations(int N, double maxShift, void* d_in1, size_t in1Size, vo
 	}
 }
 
-void computeCorrelations(double maxShift, size_t noOfImgs, std::complex<float>* h_FFTs,
+template void computeCorrelations<float>(float maxShift, size_t noOfImgs, std::complex<float>* h_FFTs,
 		int fftSizeX, int imgSizeX, int imgSizeY, size_t maxFFTsInBuffer,
-		int fftBatchSize, float*& result) {
+		int fftBatchSize, float*& result);
+template<typename T>
+void computeCorrelations(T maxShift, size_t noOfImgs, std::complex<T>* h_FFTs,
+		int fftSizeX, int imgSizeX, int imgSizeY, size_t maxFFTsInBuffer,
+		int fftBatchSize, T*& result) {
 
-	GpuMultidimArrayAtGpu<std::complex<float> > ffts(fftSizeX, imgSizeY, 1, fftBatchSize);
-	GpuMultidimArrayAtGpu<float> imgs(imgSizeX, imgSizeY, 1, fftBatchSize);
+	GpuMultidimArrayAtGpu<std::complex<T> > ffts(fftSizeX, imgSizeY, 1, fftBatchSize);
+	GpuMultidimArrayAtGpu<T> imgs(imgSizeX, imgSizeY, 1, fftBatchSize);
 	mycufftHandle myhandle;
 
 	size_t resSize = 2*maxShift + 1;
@@ -275,9 +304,9 @@ void computeCorrelations(double maxShift, size_t noOfImgs, std::complex<float>* 
 	size_t noOfCorrelations = (noOfImgs * (noOfImgs-1)) / 2;
 
 	size_t singleFFTPixels = fftSizeX * imgSizeY;
-	size_t singleFFTBytes = singleFFTPixels * sizeof(float2);
+	size_t singleFFTBytes = singleFFTPixels * sizeof(T) * 2;
 
-	result = new float[noOfCorrelations * singleImgPixels];
+	result = new T[noOfCorrelations * singleImgPixels];
 
 	size_t buffer1Size = std::min(maxFFTsInBuffer, noOfImgs);
 	void* d_fftBuffer1;

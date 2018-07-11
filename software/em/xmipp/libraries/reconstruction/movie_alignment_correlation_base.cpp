@@ -26,6 +26,9 @@
 
 #include "reconstruction/movie_alignment_correlation_base.h"
 
+using std::isnan;
+using std::isinf;
+
 template<typename T>
 void AProgMovieAlignmentCorrelation<T>::scaleLPF(const MultidimArray<T>& lpf, int xSize, int ySize, T targetOccupancy, MultidimArray<T>& result) {
 	Matrix1D<T> w(2);
@@ -462,34 +465,25 @@ void AProgMovieAlignmentCorrelation<T>::correctLoopIndices(const MetaData& movie
 template<typename T>
 void AProgMovieAlignmentCorrelation<T>::run()
 {
-	clock_t begin = clock();
     // preprocess input data
     MetaData movie;
 	readMovie(movie);
 	correctLoopIndices(movie);
-	printf("read move, correctLoopIndices took %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 
-	begin = clock();
 	Image<T> dark, gain;
 	loadDarkCorrection(dark);
 	loadGainCorrection(gain);
-	printf("loadCorrections took %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 
     int bestIref;
     if (useInputShifts)
     {
-    	begin = clock();
-    	if (!movie.containsLabel(MDL_SHIFT_X)) { // FIXME seems suspicious
+    	if (!movie.containsLabel(MDL_SHIFT_X)) {
     		setZeroShift(movie);
     	}
-    	printf("setZeroShift took %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
     } else {
-    	begin = clock();
 		bestIref = findShiftsAndStore(movie, dark, gain);
-		printf("findShifts took %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
     }
 
-    begin = clock();
 	size_t N, Ninitial;
 	Image<T> initialMic, averageMicrograph;
     // Apply shifts and compute average
@@ -497,7 +491,6 @@ void AProgMovieAlignmentCorrelation<T>::run()
 			averageMicrograph, N);
 
 	storeResults(initialMic, Ninitial, averageMicrograph, N, movie, bestIref);
-	printf("applying shift and storing took %f\n", ((float)clock()-begin)/CLOCKS_PER_SEC);
 }
 
 template class AProgMovieAlignmentCorrelation<float>;
