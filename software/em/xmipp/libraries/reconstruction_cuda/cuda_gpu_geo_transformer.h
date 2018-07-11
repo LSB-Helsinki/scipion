@@ -59,7 +59,7 @@ private:
 private:
 	bool isReady;
 
-	const size_t BLOCK_DIM_X = 32;
+	static const size_t BLOCK_DIM_X = 32;
 
 	T* d_trInv;
 	T* d_in;

@@ -29,12 +29,11 @@
 #include "reconstruction/movie_alignment_correlation_base.h"
 #include "reconstruction_cuda/cuda_gpu_movie_alignment_correlation.h"
 #include "reconstruction_cuda/cuda_gpu_geo_transformer.h"
+#include "data/filters.h"
 
 template<typename T>
 class ProgMovieAlignmentCorrelationGPU: public AProgMovieAlignmentCorrelation<T>
 {
-private:
-
 private:
 	void loadData(const MetaData& movie, const Image<T>& dark,
 			const Image<T>& gain,
@@ -44,7 +43,7 @@ private:
 	void computeShifts(size_t N, const Matrix1D<T>& bX,
 			const Matrix1D<T>& bY, const Matrix2D<T>& A);
 
-	float* loadToRAM(const MetaData& movie, int noOfImgs,
+	T* loadToRAM(const MetaData& movie, int noOfImgs,
 			const Image<T>& dark, const Image<T>& gain, bool cropInput);
 
 	void applyShiftsComputeAverage(
@@ -54,11 +53,11 @@ private:
 	void loadFrame(const MetaData& movie, size_t objId, bool crop, Image<T>& out);
 	void setSizes(Image<T> frame, int noOfImgs);
 
-private:
-	// Fourier transforms of the input images
-	std::vector< MultidimArray<std::complex<T> > * > frameFourier;
-	std::complex<T>* tmpResult;
+	int getMaxFilterSize(Image<T> &frame);
 
+private:
+	// downscaled Fourier transforms of the input images
+	std::complex<T>* data;
 
 	int inputOptSizeX;
 	int inputOptSizeY;
