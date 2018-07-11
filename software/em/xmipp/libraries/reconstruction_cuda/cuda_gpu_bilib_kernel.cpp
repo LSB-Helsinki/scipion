@@ -1,5 +1,6 @@
 #include "cuda_gpu_bilib_kernel.h"
 
+template<>
 __device__
 float bspline03(float x){
 	float Argument = fabsf(x);
@@ -14,6 +15,7 @@ float bspline03(float x){
 		return 0.f;
 }
 
+template<>
 __device__
 double bspline03(double x){
 	double Argument = fabs(x);

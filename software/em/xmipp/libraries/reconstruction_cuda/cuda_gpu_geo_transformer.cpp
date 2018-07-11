@@ -55,6 +55,49 @@ void GeoTransformer<T>::applyGeometry(int splineDegree,
 }
 
 template<typename T>
+void GeoTransformer<T>::test() {
+	Matrix1D<T> shift(2);
+	shift.vdata[0] = 0.1;
+	shift.vdata[1] = 0.2;
+	Matrix2D<T> transform;
+	translation2DMatrix(shift, transform, true);
+
+	test(transform);
+}
+
+template<typename T>
+void GeoTransformer<T>::test(const Matrix2D<T> &transform) {
+	MultidimArray<T> resGpu, resCpu;
+	MultidimArray<T> input(6, 6);
+	for(int i=0; i < input.ydim; ++i) {
+		for(int j=0; j < input.xdim; ++j) {
+			input.data[i * input.xdim + j] = i * 10 + j;
+		}
+	}
+
+	this->init(input.xdim, input.ydim, input.zdim);
+	this->applyGeometry(3, resGpu, input, transform, false, true);
+	fprintf(stderr, "\n\nAAA gpu VVV cpu\n\n");
+	::applyGeometry(3, resCpu, input, transform, false, true);
+
+	bool failed = false;
+	for(int i=0; i < input.ydim; ++i) {
+		for(int j=0; j < input.xdim; ++j) {
+			int index = i * input.xdim + j;
+			T gpu = resGpu[index];
+			T cpu = resCpu[index];
+			if (std::abs(cpu - gpu) > 0.001) {
+				failed = true;
+				fprintf(stderr, "error[%d]: GPU %.4f CPU %.4f\n", index, gpu, cpu);
+			}
+		}
+	}
+
+	fprintf(stderr, "test result: %s\n", failed ? "FAIL" : "OK");
+}
+
+
+template<typename T>
 template<typename T_IN, typename T_MAT, typename T_COEFFS>
 void GeoTransformer<T>::applyGeometry(int splineDegree,
 	                   MultidimArray<T> &output,
@@ -64,6 +107,7 @@ void GeoTransformer<T>::applyGeometry(int splineDegree,
 	checkRestrictions(splineDegree, output, input, transform);
 	if (transform.isIdentity()) {
 		typeCast(input, output);
+		return;
 	}
 
 	prepareAndLoadTransform(transform, isInv);
@@ -114,12 +158,12 @@ template<typename T>
 void GeoTransformer<T>::applyGeometry_2D_wrap(int splineDegree) {
 	T cen_yp = (int)(Y / 2);
 	T cen_xp = (int)(X / 2);
-	T minxp  = -cen_xp;
-	T minyp  = -cen_yp;
+	T minxp  = 0;
+	T minyp  = 0;
 	T minxpp = minxp-XMIPP_EQUAL_ACCURACY;
 	T minypp = minyp-XMIPP_EQUAL_ACCURACY;
-	T maxxp  = X - cen_xp - 1;
-	T maxyp  = Y - cen_yp - 1;
+	T maxxp  = X - 1;
+	T maxyp  = Y - 1;
 	T maxxpp = maxxp+XMIPP_EQUAL_ACCURACY;
 	T maxypp = maxyp+XMIPP_EQUAL_ACCURACY;
 
@@ -132,6 +176,7 @@ void GeoTransformer<T>::applyGeometry_2D_wrap(int splineDegree) {
 				minxpp, maxxpp, minypp, maxypp,
 				minxp, maxxp, minyp, maxyp,
 				d_out, (int)X, (int)Y, d_in, (int)X, (int)Y);
+		gpuErrchk( cudaPeekAtLastError() );
 		break;
 	default:
 		throw std::logic_error("not implemented");
@@ -172,9 +217,9 @@ void GeoTransformer<T>::checkRestrictions(int splineDegree, MultidimArray<T> &ou
 	if (!input.xdim)
 		throw std::invalid_argument("Input is empty");
 	if ((X != input.xdim) || (Y != input.ydim) || (Z != input.zdim))
-		throw std::logic_error("Transformer has been initialized for different size of the input");
+		throw std::logic_error("Transformer has been initialized for a different size of the input");
 	if (&input == (MultidimArray<T_IN>*)&output)
-		throw std::invalid_argument("Input array cannot be the same as output array");
+		throw std::invalid_argument("The input array cannot be the same as the output array");
 	if ((input.getDim() == 2)
 			&& ((transform.Xdim() != 3) || (transform.Ydim() != 3)))
 		throw std::invalid_argument("2D transformation matrix is not 3x3");

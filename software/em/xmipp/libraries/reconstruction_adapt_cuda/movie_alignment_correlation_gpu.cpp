@@ -320,7 +320,7 @@ void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 
 	// load all frames to RAM
 	float* imgs = loadToRAM(movie, noOfImgs, dark, gain, cropInput);
-	tmpResult = performFFTAndScale(imgs, noOfImgs, inputOptSizeX, inputOptSizeY, inputOptBatchSize, croppedOptSizeFFTX, croppedOptSizeY, d_filter);
+	data = performFFTAndScale(imgs, noOfImgs, inputOptSizeX, inputOptSizeY, inputOptBatchSize, croppedOptSizeFFTX, croppedOptSizeY, d_filter);
 
 
 //	float* imgsToProcess = imgs;
@@ -396,7 +396,7 @@ void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 		const Matrix2D<T>& A) {
 
 	float* correlations;
-	computeCorrelations(this->maxShift, N, tmpResult,
+	computeCorrelations(this->maxShift, N, data,
 			croppedOptSizeFFTX, croppedOptSizeX, croppedOptSizeY, correlationBufferImgs,
 			croppedOptBatchSize, correlations);
 

@@ -1,11 +1,8 @@
 #ifndef BILIB_KERNEL
 #define BILIB_KERNEL
 
-
+template<typename T>
 __device__
-float bspline03(float x);
-
-__device__
-double bspline03(double x);
+T bspline03(T x);
 
 #endif

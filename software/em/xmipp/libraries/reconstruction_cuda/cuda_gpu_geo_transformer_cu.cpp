@@ -43,8 +43,8 @@ void applyGeometryKernel_2D_wrap(const T* trInv,
 				break;
 			case 3:
 				T res = interpolatedElementBSpline2D_Degree3(xp, yp, coefsXDim, coefsYDim, coefs);
-								size_t index  = i*xdim+j;
-							data[index] = res;
+				size_t index  = i*xdim+j;
+				data[index] = res;
 				break;
 			default:
 				printf("Degree %d is not supported\n", degree);

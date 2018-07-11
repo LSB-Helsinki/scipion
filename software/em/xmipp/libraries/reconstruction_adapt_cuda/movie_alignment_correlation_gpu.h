@@ -33,12 +33,7 @@
 template<typename T>
 class ProgMovieAlignmentCorrelationGPU: public AProgMovieAlignmentCorrelation<T>
 {
-
-	// FIXME remove
 private:
-	// Fourier transforms of the input images
-	std::vector< MultidimArray<std::complex<T> > * > frameFourier;
-	std::complex<T>* tmpResult;
 
 private:
 	void loadData(const MetaData& movie, const Image<T>& dark,
@@ -56,10 +51,14 @@ private:
 				const MetaData& movie, const Image<T>& dark,
 				const Image<T>& gain, Image<T>& initialMic,
 				size_t& Ninitial, Image<T>& averageMicrograph, size_t& N);
-
-private:
 	void loadFrame(const MetaData& movie, size_t objId, bool crop, Image<T>& out);
 	void setSizes(Image<T> frame, int noOfImgs);
+
+private:
+	// Fourier transforms of the input images
+	std::vector< MultidimArray<std::complex<T> > * > frameFourier;
+	std::complex<T>* tmpResult;
+
 
 	int inputOptSizeX;
 	int inputOptSizeY;

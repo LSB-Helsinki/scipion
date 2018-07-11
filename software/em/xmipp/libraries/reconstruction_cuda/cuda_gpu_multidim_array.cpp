@@ -1,7 +1,7 @@
 #include "cuda_gpu_multidim_array.h"
 #define LOOKUP_TABLE_LEN 6
 
-template float interpolatedElementBSpline2D_Degree3<float>(
+template __device__ float interpolatedElementBSpline2D_Degree3<float>(
 		float x, float y, int xdim, int ydim, float* data);
 
 

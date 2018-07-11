@@ -3,7 +3,6 @@
 #include <exception>
 #include "data/multidim_array.h"
 #include "data/transformations.h"
-#include <iostream> // FIXME remove
 
 template<typename T>
 class GeoTransformer {
@@ -29,11 +28,13 @@ public:
 	                   bool wrap, T outside = 0, const MultidimArray<T_COEFFS> *bCoeffsPtr=NULL);
 
 	template<typename T_IN, typename T_MAT>
-	void applyGeometry(int splineDegree,
+	void applyGeometry(int splineDegree, // FIXME support scaling, shear
 	                   MultidimArray<T> &output,
 	                   const MultidimArray<T_IN> &input,
 	                   const Matrix2D<T_MAT> &transform, bool isInv,
 	                   bool wrap, T outside = 0);
+
+	void test();
 
 private:
 	template<typename T_IN, typename T_MAT>
@@ -52,6 +53,8 @@ private:
 
 	template<typename T_MAT>
 	void prepareAndLoadTransform(const Matrix2D<T_MAT> &transform, bool isInv);
+
+	void test(const Matrix2D<T> &transform);
 
 private:
 	bool isReady;
