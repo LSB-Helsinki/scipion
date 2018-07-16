@@ -55,6 +55,21 @@ private:
 
 	int getMaxFilterSize(Image<T> &frame);
 
+
+	void testFFT();
+	void testFFTAndScale();
+	void testScalingCpuOO();
+	void testScalingCpuOE();
+	void testScalingCpuEO();
+	void testScalingCpuEE();
+
+	void testScalingGpuOO();
+	void testScalingGpuOE();
+	void testScalingGpuEO();
+	void testScalingGpuEE();
+
+	void testFilterAndScale();
+
 private:
 	// downscaled Fourier transforms of the input images
 	std::complex<T>* data;

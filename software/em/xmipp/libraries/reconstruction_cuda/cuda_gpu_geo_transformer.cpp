@@ -57,8 +57,8 @@ void GeoTransformer<T>::applyGeometry(int splineDegree,
 template<typename T>
 void GeoTransformer<T>::test() {
 	Matrix1D<T> shift(2);
-	shift.vdata[0] = 0.1;
-	shift.vdata[1] = 0.2;
+	shift.vdata[0] = 0.45;
+	shift.vdata[1] = 0.62;
 	Matrix2D<T> transform;
 	translation2DMatrix(shift, transform, true);
 
@@ -68,7 +68,7 @@ void GeoTransformer<T>::test() {
 template<typename T>
 void GeoTransformer<T>::test(const Matrix2D<T> &transform) {
 	MultidimArray<T> resGpu, resCpu;
-	MultidimArray<T> input(6, 6);
+	MultidimArray<T> input(100, 100);
 	for(int i=0; i < input.ydim; ++i) {
 		for(int j=0; j < input.xdim; ++j) {
 			input.data[i * input.xdim + j] = i * 10 + j;

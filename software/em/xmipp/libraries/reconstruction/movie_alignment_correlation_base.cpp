@@ -34,8 +34,8 @@ void AProgMovieAlignmentCorrelation<T>::scaleLPF(const MultidimArray<T>& lpf, in
 	Matrix1D<T> w(2);
 	FOR_ALL_DIRECT_ELEMENTS_IN_ARRAY2D(result)
 	{
-		FFT_idx2digFreq(i, ySize, YY(w));
-		FFT_idx2digFreq(j, xSize, XX(w));
+		FFT_IDX2DIGFREQ(i, ySize, YY(w));
+		FFT_IDX2DIGFREQ(j, xSize, XX(w));
 		T wabs = w.module();
 		if (wabs <= targetOccupancy)
 			A2D_ELEM(result,i,j) = lpf.interpolatedElement1D(
@@ -336,8 +336,9 @@ void AProgMovieAlignmentCorrelation<T>::setNewDimensions(T& targetOccupancy,
 		REPORT_ERROR(ERR_ARG_INCORRECT,
 				"This program is meant to align 2D frames, not 3D");
 
-	newXdim = int(Xdim * sizeFactor);
-	newYdim = int(Ydim * sizeFactor);
+	this->sizeFactor = sizeFactor;
+	newXdim = (int(Xdim * sizeFactor) / 2) * 2; // we need odd size of the input, to be able to
+	newYdim = (int(Ydim * sizeFactor) / 2) * 2; // compute FFT more efficiently (and e.g. perform shift by multiplication)
 }
 
 template<typename T>

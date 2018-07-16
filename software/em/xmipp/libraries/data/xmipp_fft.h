@@ -50,7 +50,9 @@
 
 template <typename T>
 inline T FFT_idx2digFreq(size_t idx, int size, T& freq) {
-    freq = (size<=1)? 0 : (( (idx <= (size >> 1)) ? idx :  (idx - size)) / (T)size);
+	freq = (size <= 1) ? 0 :
+			(( (idx <= (size >> 1)) ? idx : (idx - size))
+					/ (T)size);
 	return freq;
 }
 

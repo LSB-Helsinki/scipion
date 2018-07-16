@@ -93,16 +93,19 @@ void ProgMovieAlignmentCorrelation<T>::loadData(const MetaData& movie,
 
 
 
-//		Image<double> bbb(frameFourier.at(0)->xdim, frameFourier.at(0)->ydim, 1, frameFourier.size());
-//		size_t imgSize = frameFourier.at(0)->yxdim;
-//		for (size_t img = 0; img < frameFourier.size();img++ ) {
-//			for (size_t i = 0; i < ((size_t)frameFourier.at(0)->yxdim); i++) {
-//				double d = frameFourier.at(img)->data[i].real();
-//				if (d < 3) bbb.data[img*imgSize + i] = d;
-//			}
-//		}
-//		bbb.write("fftFromCPU.vol");
+		Image<double> bbb(frameFourier.at(0)->xdim, frameFourier.at(0)->ydim, 1, frameFourier.size());
+		size_t imgSize = frameFourier.at(0)->yxdim;
+		for (size_t img = 0; img < frameFourier.size();img++ ) {
+			for (size_t i = 0; i < ((size_t)frameFourier.at(0)->yxdim); i++) {
+				double d = frameFourier.at(img)->data[i].real();
+				if (d < 3) bbb.data[img*imgSize + i] = d;
+			}
+		}
+		bbb.write("fftFromCPU.vol");
 
+		Image<T> tmp2(filter.xdim, filter.ydim);
+		tmp2.data = filter;
+		tmp2.write("filterCPU.vol");
 
 	}
 	if (this->verbose)

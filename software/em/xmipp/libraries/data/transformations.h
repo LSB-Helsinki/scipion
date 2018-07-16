@@ -1155,7 +1155,6 @@ void translate(int SplineDegree,
                const Matrix1D<T>& v,
                bool wrap = WRAP, T outside = 0)
 {
-	clock_t begin = clock();
     Matrix2D<T> tmp;
     if (V1.getDim()==2)
         translation2DMatrix(v, tmp,true);
@@ -1164,7 +1163,6 @@ void translate(int SplineDegree,
     else
         REPORT_ERROR(ERR_MULTIDIM_DIM,"translate ERROR: translate only valid for 2D or 3D arrays");
     applyGeometry(SplineDegree, V2, V1, tmp, IS_INV, wrap, outside);
-    printf("%f\n", ((float)clock() - begin) / CLOCKS_PER_SEC);
 }
 
 

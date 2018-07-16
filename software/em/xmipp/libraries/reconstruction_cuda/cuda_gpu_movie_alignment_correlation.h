@@ -5,7 +5,7 @@
 #include <type_traits>
 
 template<typename T>
-T* loadToGPU(T* data, size_t items);
+T* loadToGPU(const T* data, size_t items);
 
 template<typename T>
 void release(T* data);
@@ -13,7 +13,7 @@ void release(T* data);
 size_t getFreeMem(int device);
 
 void getBestSize(int imgsToProcess, int origXSize, int origYSize, int &batchSize, int &xSize, int &ySize,
-		int extraMem = 0);
+		int reserveMem = 0, bool verbose = false);
 
 size_t getFreeMem(int device);
 
@@ -34,3 +34,8 @@ template<typename T>
 void computeCorrelations(T maxShift, size_t noOfImgs, std::complex<T>* h_FFTs,
 		int fftSizeX, int imgSizeX, int imgSizeY, size_t maxFFTsInBuffer,
 		int fftBatchSize, T*& result);
+
+
+template<typename T>
+void applyFilterAndCrop(const std::complex<T>* src, std::complex<T>* dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
+		T* filter);

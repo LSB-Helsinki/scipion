@@ -130,6 +130,12 @@ inline __host__ __device__ void operator/=(float2 &a, float s)
     float inv = 1.0f / s;
     a *= inv;
 }
+inline __host__ __device__ void operator/=(double2 &a, float s)
+{
+    double inv = 1.0 / s;
+    a *= inv;
+}
+
 
 // dot product
 inline __host__ __device__ float dot(float2 a, float2 b)

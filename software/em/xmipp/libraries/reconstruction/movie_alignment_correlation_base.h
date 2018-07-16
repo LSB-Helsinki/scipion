@@ -133,6 +133,7 @@ protected:
 	int outsideMode;
 	/** Outside value */
 	T outsideValue;
+	T sizeFactor;
 
 private:
 	// Target sampling rate

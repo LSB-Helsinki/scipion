@@ -183,12 +183,15 @@ void ProgMovieAlignmentCorrelationGPU<T>::setSizes(Image<T> frame,
 
 	// we also need enough memory for filter
 	getBestSize(noOfImgs, frame.data.xdim, frame.data.ydim, inputOptBatchSize,
-			inputOptSizeX, inputOptSizeY, maxFilterSize);
+			inputOptSizeX, inputOptSizeY, maxFilterSize, this->verbose);
 
 	inputOptSizeFFTX = inputOptSizeX / 2 + 1;
 
 	getBestSize(noOfCorrelations, this->newXdim, this->newYdim, croppedOptBatchSize,
-			croppedOptSizeX, croppedOptSizeY, correlationBufferSizeMB * 2);
+			croppedOptSizeX, croppedOptSizeY, correlationBufferSizeMB * 2, this->verbose);
+
+	croppedOptSizeX = this->newXdim;
+	croppedOptSizeY = this->newYdim; // FIXME remove both
 
 	croppedOptSizeFFTX = croppedOptSizeX / 2 + 1;
 
@@ -197,9 +200,806 @@ void ProgMovieAlignmentCorrelationGPU<T>::setSizes(Image<T> frame,
 }
 
 template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testFFT() {
+
+	double delta = 0.00001;
+	size_t x, y;
+	x = y = 2304;
+	size_t order = 10000;
+
+	srand (42);
+
+	Image<double> inputDouble(x, y); // keep sync with values
+	Image<float> inputFloat(x, y); // keep sync with values
+	size_t pixels = inputDouble.data.xdim * inputDouble.data.ydim;
+	for (size_t y = 0; y < inputDouble.data.ydim; ++y) {
+		for (size_t x = 0; x < inputDouble.data.xdim; ++x) {
+			size_t index = y * inputDouble.data.xdim + x;
+			double value = rand() / (RAND_MAX/2000.);
+			inputDouble.data.data[index] = value;
+			inputFloat.data.data[index] = (float)value;
+		}
+	}
+
+	// CPU part
+
+	MultidimArray<std::complex<double> > tmpFFTCpu;
+	FourierTransformer transformer;
+
+	transformer.FourierTransform(inputDouble(), tmpFFTCpu, true);
+
+	// store results to drive
+	Image<double>fftCPU(tmpFFTCpu.xdim, tmpFFTCpu.ydim);
+	size_t fftPixels = fftCPU.data.yxdim;
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftCPU.data.data[i] = tmpFFTCpu.data[i].real();
+	}
+	fftCPU.write("testFFTCpu.vol");
+
+	// GPU part
+
+	GpuMultidimArrayAtGpu<float> gpuIn(inputFloat.data.xdim, inputFloat.data.ydim);
+	gpuIn.copyToGpu(inputFloat.data.data);
+	GpuMultidimArrayAtGpu<std::complex<float> > gpuFFT;
+	mycufftHandle handle;
+	gpuIn.fft(gpuFFT, handle);
+
+	fftPixels = gpuFFT.yxdim;
+	std::complex<float>* tmpFFTGpu = new std::complex<float>[fftPixels];
+	gpuFFT.copyToCpu(tmpFFTGpu);
+
+	// store results to drive
+	Image<float>fftGPU(gpuFFT.Xdim, gpuFFT.Ydim);
+	float norm = inputFloat.data.yxdim;
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftGPU.data.data[i] = tmpFFTGpu[i].real() / norm;
+	}
+	fftGPU.write("testFFTGpu.vol");
+
+	////////////////////////////////////////
+
+	if (fftCPU.data.xdim != fftGPU.data.xdim) {
+		printf("wrong size: X cpu %lu X gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+	if (fftCPU.data.ydim != fftGPU.data.ydim) {
+		printf("wrong size: Y cpu %lu Y gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+
+	for (size_t i = 0; i < fftCPU.data.yxdim; ++i) {
+		float cpuReal = tmpFFTCpu.data[i].real();
+		float cpuImag = tmpFFTCpu.data[i].imag();
+		float gpuReal = tmpFFTGpu[i].real() / norm;
+		float gpuImag = tmpFFTGpu[i].imag() / norm;
+		if ((std::abs(cpuReal - gpuReal) > delta)
+				|| (std::abs(cpuImag - gpuImag) > delta)){
+			printf("ERROR FFT: %lu cpu (%f, %f) gpu (%f, %f)\n", i, cpuReal, cpuImag, gpuReal, gpuImag);
+		}
+	}
+
+	delete[] tmpFFTGpu;
+
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testFilterAndScale() {
+	double delta = 0.00001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT;
+	xIn = yIn = 4096;
+	xOut = yOut = 2275;
+	xOutFFT = xOut / 2 + 1;
+
+	size_t fftPixels = xOutFFT * yOut;
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[fftPixels];
+	float* filter = new float[fftPixels];
+	for (size_t i = 0; i < fftPixels; ++i) {
+		filter[i] = (rand() * 100) / (float)RAND_MAX;
+	}
+
+	srand (42);
+
+	Image<double> inputDouble(xIn, yIn); // keep sync with values
+	Image<float> inputFloat(xIn, yIn); // keep sync with values
+	size_t pixels = inputDouble.data.xdim * inputDouble.data.ydim;
+	for (size_t y = 0; y < inputDouble.data.ydim; ++y) {
+		for (size_t x = 0; x < inputDouble.data.xdim; ++x) {
+			size_t index = y * inputDouble.data.xdim + x;
+			double value = rand() > (RAND_MAX/2) ? -1 : 1;// ((int)(1000 * (double)rand() / (RAND_MAX))) / 1000.f;
+			inputDouble.data.data[index] = value;
+			inputFloat.data.data[index] = (float)value;
+		}
+	}
+//	inputDouble(0,0) = 1;
+//	inputFloat(0,0) = 1;
+	Image<double> outputDouble(xOut, yOut);
+	Image<double> reducedFrame;
+
+	// CPU part
+
+	scaleToSizeFourier(1, yOut, xOut, inputDouble(),
+						reducedFrame());
+//	inputDouble().printStats();
+//	printf("\n");
+//	reducedFrame().printStats();
+//	printf("\n");
+	// Now do the Fourier transform and filter
+	MultidimArray<std::complex<double> > *tmpFFTCpuOut =
+			new MultidimArray<std::complex<double> >;
+	MultidimArray<std::complex<double> > *tmpFFTCpuOutFull =
+				new MultidimArray<std::complex<double> >;
+	FourierTransformer transformer;
+
+	transformer.FourierTransform(inputDouble(), *tmpFFTCpuOutFull);
+//	std::cout << *tmpFFTCpuOutFull<< std::endl;
+
+	transformer.FourierTransform(reducedFrame(), *tmpFFTCpuOut,
+			true);
+	for (size_t nn = 0; nn < fftPixels; ++nn) {
+		double wlpf = filter[nn];
+			DIRECT_MULTIDIM_ELEM(*tmpFFTCpuOut,nn) *= wlpf;
+	}
+
+	// store results to drive
+	Image<double>fftCPU(tmpFFTCpuOut->xdim, tmpFFTCpuOut->ydim);
+	fftPixels = tmpFFTCpuOut->yxdim;
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftCPU.data.data[i] = tmpFFTCpuOut->data[i].real();
+		if (fftCPU.data.data[i] > 10 ) fftCPU.data.data[i] = 0;
+	}
+	fftCPU.write("testFFTCpuScaledFiltered.vol");
+
+	// GPU part
+
+
+	float* d_filter = loadToGPU(filter, fftPixels);
+
+	GpuMultidimArrayAtGpu<float> gpuIn(inputFloat.data.xdim, inputFloat.data.ydim);
+	gpuIn.copyToGpu(inputFloat.data.data);
+	GpuMultidimArrayAtGpu<std::complex<float> > gpuFFT;
+	mycufftHandle handle;
+
+	processInput(gpuIn, gpuFFT, handle, xIn, yIn, 1, xOutFFT, yOut, d_filter, tmpFFTGpuOut);
+
+	// store results to drive
+	Image<float>fftGPU(xOutFFT, yOut);
+	float norm = inputFloat.data.yxdim;
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftGPU.data.data[i] = tmpFFTGpuOut[i].real() / norm;
+		if (fftGPU.data.data[i] > 10 ) fftGPU.data.data[i] = 0;
+	}
+	fftGPU.write("testFFTGpuScaledFiltered.vol");
+
+	////////////////////////////////////////
+
+	if (fftCPU.data.xdim != fftGPU.data.xdim) {
+		printf("wrong size: X cpu %lu X gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+	if (fftCPU.data.ydim != fftGPU.data.ydim) {
+		printf("wrong size: Y cpu %lu Y gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+	if (tmpFFTCpuOut->ydim != yOut) {
+		printf("wrong size tmpFFTCpuOut: Y cpu %lu Y gpu %lu\n", tmpFFTCpuOut->ydim , yOut);
+	}
+	if (tmpFFTCpuOut->xdim != xOutFFT) {
+		printf("wrong size tmpFFTCpuOut: X cpu %lu X gpu %lu\n", tmpFFTCpuOut->xdim , xOutFFT);
+	}
+
+
+	for (size_t i = 0; i < fftCPU.data.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut->data[i].real();
+		float cpuImag = tmpFFTCpuOut->data[i].imag();
+		float gpuReal = tmpFFTGpuOut[i].real() / norm;
+		float gpuImag = tmpFFTGpuOut[i].imag() / norm;
+		if ((std::abs(cpuReal - gpuReal) > delta)
+				|| (std::abs(cpuImag - gpuImag) > delta)){
+			printf("ERROR FILTER: %lu cpu (%f, %f) gpu (%f, %f)\n", i, cpuReal, cpuImag, gpuReal, gpuImag);
+		}
+	}
+	delete[] tmpFFTGpuOut;
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingGpuOO() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT, xInFFT;
+	xIn = yIn = 9;
+	xOut = yOut = 5;
+	xOutFFT = xOut / 2 + 1; // == 3
+	xInFFT = xIn / 2 + 1; // == 5
+
+	std::complex<float>* tmpFFTGpuIn = new std::complex<float>[yIn * xInFFT];
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[yOut * xOutFFT];
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < yIn; ++y) {
+		for (size_t x = 0; x < xInFFT; ++x) {
+			size_t index = y * xInFFT + x;
+			tmpFFTGpuIn[index] = std::complex<float> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+
+	tmpFFTCpuOutExpected[3] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,2);
+
+	tmpFFTCpuOutExpected[6] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,2);
+
+	tmpFFTCpuOutExpected[9] = std::complex<double>(7,0);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(7,1);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(7,2);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(8,2);
+
+
+	applyFilterAndCrop<float>(tmpFFTGpuIn, tmpFFTGpuOut, 1, xInFFT, yIn, xOutFFT, yOut, NULL);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTGpuOut[i].real();
+		float cpuImag = tmpFFTGpuOut[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE GPU OO: %lu gpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingGpuEO() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT, xInFFT;
+	xIn = yIn = 10;
+	xOut = yOut = 5;
+	xOutFFT = xOut / 2 + 1; // == 3
+	xInFFT = xIn / 2 + 1; // == 6
+
+	std::complex<float>* tmpFFTGpuIn = new std::complex<float>[yIn * xInFFT];
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[yOut * xOutFFT];
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < yIn; ++y) {
+		for (size_t x = 0; x < xInFFT; ++x) {
+			size_t index = y * xInFFT + x;
+			tmpFFTGpuIn[index] = std::complex<float> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+
+	tmpFFTCpuOutExpected[3] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,2);
+
+	tmpFFTCpuOutExpected[6] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,2);
+
+	tmpFFTCpuOutExpected[9] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(8,2);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(9,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(9,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(9,2);
+
+
+	applyFilterAndCrop<float>(tmpFFTGpuIn, tmpFFTGpuOut, 1, xInFFT, yIn, xOutFFT, yOut, NULL);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTGpuOut[i].real();
+		float cpuImag = tmpFFTGpuOut[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE GPU EO: %lu gpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingGpuOE() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT, xInFFT;
+	xIn = yIn = 9;
+	xOut = yOut = 6;
+	xOutFFT = xOut / 2 + 1; // == 4
+	xInFFT = xIn / 2 + 1; // == 5
+
+	std::complex<float>* tmpFFTGpuIn = new std::complex<float>[yIn * xInFFT];
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[yOut * xOutFFT];
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < yIn; ++y) {
+		for (size_t x = 0; x < xInFFT; ++x) {
+			size_t index = y * xInFFT + x;
+			tmpFFTGpuIn[index] = std::complex<float> (y, x);
+		}
+	}
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+	tmpFFTCpuOutExpected[3] = std::complex<double>(0,3);
+
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[6] = std::complex<double>(1,2);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(1,3);
+
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[9] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(2,2);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(2,3);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(3,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(3,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(3,2);
+	tmpFFTCpuOutExpected[15] = std::complex<double>(3,3);
+
+	tmpFFTCpuOutExpected[16] = std::complex<double>(7,0);
+	tmpFFTCpuOutExpected[17] = std::complex<double>(7,1);
+	tmpFFTCpuOutExpected[18] = std::complex<double>(7,2);
+	tmpFFTCpuOutExpected[19] = std::complex<double>(7,3);
+
+	tmpFFTCpuOutExpected[20] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[21] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[22] = std::complex<double>(8,2);
+	tmpFFTCpuOutExpected[23] = std::complex<double>(8,3);
+
+
+	applyFilterAndCrop<float>(tmpFFTGpuIn, tmpFFTGpuOut, 1, xInFFT, yIn, xOutFFT, yOut, NULL);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTGpuOut[i].real();
+		float cpuImag = tmpFFTGpuOut[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE GPU OE: %lu gpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingGpuEE() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT, xInFFT;
+	xIn = yIn = 10;
+	xOut = yOut = 6;
+	xOutFFT = xOut / 2 + 1; // == 4
+	xInFFT = xIn / 2 + 1; // == 6
+
+	std::complex<float>* tmpFFTGpuIn = new std::complex<float>[yIn * xInFFT];
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[yOut * xOutFFT];
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < yIn; ++y) {
+		for (size_t x = 0; x < xInFFT; ++x) {
+			size_t index = y * xInFFT + x;
+			tmpFFTGpuIn[index] = std::complex<float> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+	tmpFFTCpuOutExpected[3] = std::complex<double>(0,3);
+
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[6] = std::complex<double>(1,2);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(1,3);
+
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[9] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(2,2);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(2,3);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(3,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(3,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(3,2);
+	tmpFFTCpuOutExpected[15] = std::complex<double>(3,3);
+
+	tmpFFTCpuOutExpected[16] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[17] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[18] = std::complex<double>(8,2);
+	tmpFFTCpuOutExpected[19] = std::complex<double>(8,3);
+
+	tmpFFTCpuOutExpected[20] = std::complex<double>(9,0);
+	tmpFFTCpuOutExpected[21] = std::complex<double>(9,1);
+	tmpFFTCpuOutExpected[22] = std::complex<double>(9,2);
+	tmpFFTCpuOutExpected[23] = std::complex<double>(9,3);
+
+	applyFilterAndCrop<float>(tmpFFTGpuIn, tmpFFTGpuOut, 1, xInFFT, yIn, xOutFFT, yOut, NULL);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTGpuOut[i].real();
+		float cpuImag = tmpFFTGpuOut[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE GPU EE: %lu gpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingCpuOO() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT, xInFFT;
+	xIn = yIn = 9;
+	xOut = yOut = 5;
+	xOutFFT = xOut / 2 + 1; // == 3
+
+	Image<double> inputDouble(xIn, yIn);
+	Image<double> outputDouble(xOut, yOut);
+	MultidimArray<std::complex<double> > tmpFFTCpuIn(yIn, xIn/2+1);
+	MultidimArray<std::complex<double> > tmpFFTCpuOut(yOut, xOutFFT);
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < tmpFFTCpuIn.ydim; ++y) {
+		for (size_t x = 0; x < tmpFFTCpuIn.xdim; ++x) {
+			size_t index = y * tmpFFTCpuIn.xdim + x;
+			tmpFFTCpuIn.data[index] = std::complex<double> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+
+	tmpFFTCpuOutExpected[3] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,2);
+
+	tmpFFTCpuOutExpected[6] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,2);
+
+	tmpFFTCpuOutExpected[9] = std::complex<double>(7,0);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(7,1);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(7,2);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(8,2);
+
+
+	scaleToSizeFourier(inputDouble(), outputDouble(), tmpFFTCpuIn, tmpFFTCpuOut);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut.data[i].real();
+		float cpuImag = tmpFFTCpuOut.data[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE CPU OO: %lu cpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingCpuEO() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT;
+	xIn = yIn = 10;
+	xOut = yOut = 5;
+	xOutFFT = xOut / 2 + 1; // == 3
+
+	Image<double> inputDouble(xIn, yIn);
+	Image<double> outputDouble(xOut, yOut);
+	MultidimArray<std::complex<double> > tmpFFTCpuIn(yIn, xIn/2+1);
+	MultidimArray<std::complex<double> > tmpFFTCpuOut(yOut, xOutFFT);
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < tmpFFTCpuIn.ydim; ++y) {
+		for (size_t x = 0; x < tmpFFTCpuIn.xdim; ++x) {
+			size_t index = y * tmpFFTCpuIn.xdim + x;
+			tmpFFTCpuIn.data[index] = std::complex<double> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+
+	tmpFFTCpuOutExpected[3] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,2);
+
+	tmpFFTCpuOutExpected[6] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,2);
+
+	tmpFFTCpuOutExpected[9] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(8,2);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(9,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(9,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(9,2);
+
+
+	scaleToSizeFourier(inputDouble(), outputDouble(), tmpFFTCpuIn, tmpFFTCpuOut);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut.data[i].real();
+		float cpuImag = tmpFFTCpuOut.data[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE CPU EO: %lu cpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingCpuOE() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT;
+	xIn = yIn = 9;
+	xOut = yOut = 6;
+	xOutFFT = xOut / 2 + 1; // == 4
+
+	Image<double> inputDouble(xIn, yIn);
+	Image<double> outputDouble(xOut, yOut);
+	MultidimArray<std::complex<double> > tmpFFTCpuIn(yIn, xIn/2+1);
+	MultidimArray<std::complex<double> > tmpFFTCpuOut(yOut, xOutFFT);
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < tmpFFTCpuIn.ydim; ++y) {
+		for (size_t x = 0; x < tmpFFTCpuIn.xdim; ++x) {
+			size_t index = y * tmpFFTCpuIn.xdim + x;
+			tmpFFTCpuIn.data[index] = std::complex<double> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+	tmpFFTCpuOutExpected[3] = std::complex<double>(0,3);
+
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[6] = std::complex<double>(1,2);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(1,3);
+
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[9] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(2,2);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(2,3);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(3,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(3,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(3,2);
+	tmpFFTCpuOutExpected[15] = std::complex<double>(3,3);
+
+	tmpFFTCpuOutExpected[16] = std::complex<double>(7,0);
+	tmpFFTCpuOutExpected[17] = std::complex<double>(7,1);
+	tmpFFTCpuOutExpected[18] = std::complex<double>(7,2);
+	tmpFFTCpuOutExpected[19] = std::complex<double>(7,3);
+
+	tmpFFTCpuOutExpected[20] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[21] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[22] = std::complex<double>(8,2);
+	tmpFFTCpuOutExpected[23] = std::complex<double>(8,3);
+
+
+	scaleToSizeFourier(inputDouble(), outputDouble(), tmpFFTCpuIn, tmpFFTCpuOut);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut.data[i].real();
+		float cpuImag = tmpFFTCpuOut.data[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE CPU OE: %lu cpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testScalingCpuEE() {
+	double delta = 0.000001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT;
+	xIn = yIn = 10;
+	xOut = yOut = 6;
+	xOutFFT = xOut / 2 + 1; // == 4
+
+	Image<double> inputDouble(xIn, yIn);
+	Image<double> outputDouble(xOut, yOut);
+	MultidimArray<std::complex<double> > tmpFFTCpuIn(yIn, xIn/2+1);
+	MultidimArray<std::complex<double> > tmpFFTCpuOut(yOut, xOutFFT);
+	MultidimArray<std::complex<double> > tmpFFTCpuOutExpected(yOut, xOutFFT);
+	for (size_t y = 0; y < tmpFFTCpuIn.ydim; ++y) {
+		for (size_t x = 0; x < tmpFFTCpuIn.xdim; ++x) {
+			size_t index = y * tmpFFTCpuIn.xdim + x;
+			tmpFFTCpuIn.data[index] = std::complex<double> (y, x);
+		}
+	}
+
+	tmpFFTCpuOutExpected[0] = std::complex<double>(0,0);
+	tmpFFTCpuOutExpected[1] = std::complex<double>(0,1);
+	tmpFFTCpuOutExpected[2] = std::complex<double>(0,2);
+	tmpFFTCpuOutExpected[3] = std::complex<double>(0,3);
+
+	tmpFFTCpuOutExpected[4] = std::complex<double>(1,0);
+	tmpFFTCpuOutExpected[5] = std::complex<double>(1,1);
+	tmpFFTCpuOutExpected[6] = std::complex<double>(1,2);
+	tmpFFTCpuOutExpected[7] = std::complex<double>(1,3);
+
+	tmpFFTCpuOutExpected[8] = std::complex<double>(2,0);
+	tmpFFTCpuOutExpected[9] = std::complex<double>(2,1);
+	tmpFFTCpuOutExpected[10] = std::complex<double>(2,2);
+	tmpFFTCpuOutExpected[11] = std::complex<double>(2,3);
+
+	tmpFFTCpuOutExpected[12] = std::complex<double>(3,0);
+	tmpFFTCpuOutExpected[13] = std::complex<double>(3,1);
+	tmpFFTCpuOutExpected[14] = std::complex<double>(3,2);
+	tmpFFTCpuOutExpected[15] = std::complex<double>(3,3);
+
+	tmpFFTCpuOutExpected[16] = std::complex<double>(8,0);
+	tmpFFTCpuOutExpected[17] = std::complex<double>(8,1);
+	tmpFFTCpuOutExpected[18] = std::complex<double>(8,2);
+	tmpFFTCpuOutExpected[19] = std::complex<double>(8,3);
+
+	tmpFFTCpuOutExpected[20] = std::complex<double>(9,0);
+	tmpFFTCpuOutExpected[21] = std::complex<double>(9,1);
+	tmpFFTCpuOutExpected[22] = std::complex<double>(9,2);
+	tmpFFTCpuOutExpected[23] = std::complex<double>(9,3);
+
+
+	scaleToSizeFourier(inputDouble(), outputDouble(), tmpFFTCpuIn, tmpFFTCpuOut);
+
+	////////////////////////////////////////
+
+	for (size_t i = 0; i < tmpFFTCpuOutExpected.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut.data[i].real();
+		float cpuImag = tmpFFTCpuOut.data[i].imag();
+		float expReal = tmpFFTCpuOutExpected[i].real();
+		float expImag = tmpFFTCpuOutExpected[i].imag();
+		if ((std::abs(cpuReal - expReal) > delta)
+				|| (std::abs(cpuImag - expImag) > delta)){
+			printf("ERROR SCALE CPU EE: %lu cpu (%f, %f) exp (%f, %f)\n", i, cpuReal, cpuImag, expReal, expImag);
+		}
+	}
+}
+
+template<typename T>
+void ProgMovieAlignmentCorrelationGPU<T>::testFFTAndScale() {
+	double delta = 0.00001;
+	size_t xIn, yIn, xOut, yOut, xOutFFT;
+	xIn = yIn = 4096;
+	xOut = yOut = 2276;
+	xOutFFT = xOut / 2 + 1;
+	size_t order = 10000;
+	size_t fftPixels = xOutFFT * yOut;
+
+	srand (42);
+
+	Image<double> inputDouble(xIn, yIn); // keep sync with values
+	Image<float> inputFloat(xIn, yIn); // keep sync with values
+	size_t pixels = inputDouble.data.xdim * inputDouble.data.ydim;
+	for (size_t y = 0; y < inputDouble.data.ydim; ++y) {
+		for (size_t x = 0; x < inputDouble.data.xdim; ++x) {
+			size_t index = y * inputDouble.data.xdim + x;
+			double value = rand() / (RAND_MAX/2000.);
+			inputDouble.data.data[index] = value;
+			inputFloat.data.data[index] = (float)value;
+		}
+	}
+
+	float* filter = new float[fftPixels];
+	for (size_t i = 0; i < fftPixels; ++i) {
+		filter[i] = rand() / (float)RAND_MAX;
+	}
+
+
+	// CPU part
+	Image<double> outputDouble(xOut, yOut);
+	MultidimArray<std::complex<double> > tmpFFTCpuIn;
+	MultidimArray<std::complex<double> > tmpFFTCpuOut(yOut, xOutFFT);
+	FourierTransformer transformer;
+
+	transformer.FourierTransform(inputDouble(), tmpFFTCpuIn, true);
+	scaleToSizeFourier(inputDouble(), outputDouble(), tmpFFTCpuIn, tmpFFTCpuOut);
+
+	for (size_t nn = 0; nn < fftPixels; ++nn) {
+		double wlpf = filter[nn];
+			DIRECT_MULTIDIM_ELEM(tmpFFTCpuOut,nn) *= wlpf;
+	}
+
+	// store results to drive
+	Image<double>fftCPU(tmpFFTCpuOut.xdim, tmpFFTCpuOut.ydim);
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftCPU.data.data[i] = tmpFFTCpuOut.data[i].real();
+	}
+	fftCPU.write("testFFTCpuScaled.vol");
+
+	// GPU part
+
+	std::complex<float>* tmpFFTGpuOut = new std::complex<float>[fftPixels];
+	float* d_filter = loadToGPU(filter, fftPixels);
+
+	GpuMultidimArrayAtGpu<float> gpuIn(inputFloat.data.xdim, inputFloat.data.ydim);
+	gpuIn.copyToGpu(inputFloat.data.data);
+	GpuMultidimArrayAtGpu<std::complex<float> > gpuFFT;
+	mycufftHandle handle;
+
+	processInput(gpuIn, gpuFFT, handle, xIn, yIn, 1, xOutFFT, yOut, d_filter, tmpFFTGpuOut);
+
+	// store results to drive
+	Image<float>fftGPU(xOutFFT, yOut);
+	float norm = inputFloat.data.yxdim;
+	for(size_t i = 0; i < fftPixels; i++) {
+		fftGPU.data.data[i] = tmpFFTGpuOut[i].real() / norm;
+	}
+	fftGPU.write("testFFTGpuScaled.vol");
+
+	////////////////////////////////////////
+
+	if (fftCPU.data.xdim != fftGPU.data.xdim) {
+		printf("wrong size: X cpu %lu X gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+	if (fftCPU.data.ydim != fftGPU.data.ydim) {
+		printf("wrong size: Y cpu %lu Y gpu %lu\n", fftCPU.data.xdim, fftGPU.data.xdim);
+	}
+
+	for (size_t i = 0; i < fftCPU.data.yxdim; ++i) {
+		float cpuReal = tmpFFTCpuOut.data[i].real();
+		float cpuImag = tmpFFTCpuOut.data[i].imag();
+		float gpuReal = tmpFFTGpuOut[i].real() / norm;
+		float gpuImag = tmpFFTGpuOut[i].imag() / norm;
+		if ((std::abs(cpuReal - gpuReal) > delta)
+				|| (std::abs(cpuImag - gpuImag) > delta)){
+			printf("ERROR SCALE: %lu cpu (%f, %f) gpu (%f, %f)\n", i, cpuReal, cpuImag, gpuReal, gpuImag);
+		}
+	}
+	delete[] tmpFFTGpuOut;
+}
+
+
+template<typename T>
 void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 		const Image<T>& dark, const Image<T>& gain,
 		T targetOccupancy, const MultidimArray<T>& lpf) {
+
+	testFFT();
+
+	testScalingCpuEE(); printf("\n");
+	testScalingCpuEO(); printf("\n");
+	testScalingCpuOE(); printf("\n");
+	testScalingCpuOO(); printf("\n");
+
+	testScalingGpuEE(); printf("\n");
+	testScalingGpuEO(); printf("\n");
+	testScalingGpuOE(); printf("\n");
+	testScalingGpuOO(); printf("\n");
+
+	testFilterAndScale();
+
 	// allocate space for data on CPU
 	bool cropInput = (this->yDRcorner != -1);
 	int noOfImgs = this->nlast - this->nfirst + 1;
@@ -218,6 +1018,24 @@ void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 	T* imgs = loadToRAM(movie, noOfImgs, dark, gain, cropInput);
 	data = performFFTAndScale(imgs, noOfImgs, inputOptSizeX, inputOptSizeY, inputOptBatchSize, croppedOptSizeFFTX, croppedOptSizeY, d_filter);
 
+	Image<T> tmp(croppedOptSizeFFTX, croppedOptSizeY, 1, noOfImgs);
+	size_t pixels = croppedOptSizeFFTX *croppedOptSizeY * noOfImgs;
+	T* tmp1 = new T[pixels]();
+	T normFactor = inputOptSizeX * inputOptSizeY;
+
+	for (size_t i = -0; i < pixels; i++) {
+		T val = data[i].imag() / normFactor;
+		if (val < 3) {
+			tmp1[i] = val;
+		}
+	}
+	tmp.data.data = tmp1;
+	tmp.write("fftFromGPU.vol");
+
+	Image<T> tmp2(croppedOptSizeFFTX, croppedOptSizeY);
+	tmp2.data = filter;
+	tmp2.write("filterGPU.vol");
+
 	release(d_filter);
 }
 
@@ -231,8 +1049,12 @@ void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 			croppedOptSizeFFTX, croppedOptSizeX, croppedOptSizeY, correlationBufferImgs,
 			croppedOptBatchSize, correlations);
 
-	int idx = 0;
 	int resultSize = this->maxShift*2+1;
+	Image<T> tmp(resultSize, resultSize, 1, N);
+	tmp.data.data = correlations;
+	tmp.write("correlationsGPU.vol");
+
+	int idx = 0;
 	MultidimArray<T> Mcorr (resultSize, resultSize);
 	for (size_t i = 0; i < N - 1; ++i) {
 		for (size_t j = i + 1; j < N; ++j) {
