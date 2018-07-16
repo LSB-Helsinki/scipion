@@ -323,6 +323,7 @@ class XmippProtMonoRes(ProtAnalysis3D):
         params += ' --significance %f' % self.significance.get()
         params += ' --md_outputdata %s' % self._getFileName(METADATA_MASK_FILE)  
         params += ' --filtered_volume %s' % ''
+        params += ' --threads %i' % self.numberOfThreads.get()
 
         self.runJob('xmipp_resolution_monogenic_signal', params)
 
@@ -367,7 +368,8 @@ class XmippProtMonoRes(ProtAnalysis3D):
                                                     OUTPUT_RESOLUTION_FILE_CHIMERA)
         params += ' --sym %s' % 'c1'#self.symmetry.get()
         params += ' --significance %f' % self.significance.get()
-        params += ' --md_outputdata %s' % self._getFileName(METADATA_MASK_FILE)  
+        params += ' --md_outputdata %s' % self._getFileName(METADATA_MASK_FILE)
+        params += ' --threads %i' % self.numberOfThreads.get()
         if self.filterInput.get():
             params += ' --filtered_volume %s' % self._getFileName(FN_FILTERED_MAP)
         else:

@@ -31,6 +31,7 @@
 #include <data/xmipp_program.h>
 #include <data/xmipp_image.h>
 #include <data/metadata.h>
+#include <data/xmipp_hdf5.h>
 #include <data/xmipp_fft.h>
 #include <data/xmipp_fftw.h>
 #include <math.h>
@@ -50,7 +51,7 @@ class ProgLocSharpening : public XmippProgram
 {
 public:
 	 /** Filenames */
-	FileName fnOut, fnVol, fnRes;
+	FileName fnOut, fnVol, fnRes, fnMD;
 
 	/** sampling rate, minimum resolution, and maximum resolution */
 	double sampling, maxRes, minRes, lambda, maxFreq, minFreq, desv_Vorig, desvOutside_Vorig;
