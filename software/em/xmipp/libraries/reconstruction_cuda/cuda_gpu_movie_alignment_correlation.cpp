@@ -192,9 +192,6 @@ void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlat
 				double2 res;
 				res.x = (tmp.x*tmp2.x) + (tmp.y*tmp2.y);
 				res.y = (tmp.y*tmp2.x) - (tmp.x*tmp2.y);
-				if (idx == 30 && idy == 45) {
-					printf("tmp (%f,%f) tmp2 (%f,%f) norm %d  res (%.9f,%.9f)\n", tmp.x, tmp.y, tmp2.x, tmp2.y, (yDim*yDim), res.x, res.y);
-				}
 				correlations[counter*xDim*yDim + pixelIndex] = make_float2(res.x*a, res.y*a);
 				counter++;
 			}

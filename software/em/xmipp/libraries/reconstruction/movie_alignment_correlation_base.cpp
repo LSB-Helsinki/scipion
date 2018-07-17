@@ -421,7 +421,7 @@ int AProgMovieAlignmentCorrelation<T>::findShiftsAndStore(
 	if (verbose)
 		std::cout << "Computing shifts between frames ..." << std::endl;
 	// Now compute all shifts
-	computeShifts(N, bX, bY, A);
+	computeShifts(N, bX, bY, A); // notice that the shifts bX and bY are scaled by the sizeFactor
 
 	Matrix1D<T> shiftX, shiftY;
 	solveEquationSystem(bX, bY, A, shiftX, shiftY);

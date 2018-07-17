@@ -189,9 +189,9 @@ void ProgMovieAlignmentCorrelationGPU<T>::setSizes(Image<T> frame,
 
 	getBestSize(noOfCorrelations, this->newXdim, this->newYdim, croppedOptBatchSize,
 			croppedOptSizeX, croppedOptSizeY, correlationBufferSizeMB * 2, this->verbose);
-
-	croppedOptSizeX = this->newXdim;
-	croppedOptSizeY = this->newYdim; // FIXME remove both
+//
+//	croppedOptSizeX = this->newXdim;
+//	croppedOptSizeY = this->newYdim; // FIXME remove both
 
 	croppedOptSizeFFTX = croppedOptSizeX / 2 + 1;
 
@@ -985,20 +985,20 @@ template<typename T>
 void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 		const Image<T>& dark, const Image<T>& gain,
 		T targetOccupancy, const MultidimArray<T>& lpf) {
-
-	testFFT();
-
-	testScalingCpuEE(); printf("\n");
-	testScalingCpuEO(); printf("\n");
-	testScalingCpuOE(); printf("\n");
-	testScalingCpuOO(); printf("\n");
-
-	testScalingGpuEE(); printf("\n");
-	testScalingGpuEO(); printf("\n");
-	testScalingGpuOE(); printf("\n");
-	testScalingGpuOO(); printf("\n");
-
-	testFilterAndScale();
+//
+//	testFFT();
+//
+//	testScalingCpuEE(); printf("\n");
+//	testScalingCpuEO(); printf("\n");
+//	testScalingCpuOE(); printf("\n");
+//	testScalingCpuOO(); printf("\n");
+//
+//	testScalingGpuEE(); printf("\n");
+//	testScalingGpuEO(); printf("\n");
+//	testScalingGpuOE(); printf("\n");
+//	testScalingGpuOO(); printf("\n");
+//
+//	testFilterAndScale();
 
 	// allocate space for data on CPU
 	bool cropInput = (this->yDRcorner != -1);
@@ -1039,8 +1039,24 @@ void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 	release(d_filter);
 }
 
+void __attribute__((optimize("O0"))) findMax(MultidimArray<float> &Mcorr, float &posX, float &posY ) {
+	float max = std::numeric_limits<float>::min();
+	for (int y = STARTINGY(Mcorr); y < FINISHINGY(Mcorr); ++y) {
+		for (int x = STARTINGX(Mcorr); x < FINISHINGX(Mcorr); ++x) {
+			float val = A2D_ELEM(Mcorr, y, x);
+			if (val > max) {
+				posX = x;
+				posY = y;
+				max = val;
+			}
+		}
+	}
+//	posX+=2;
+//	posY+=2; // FIXME why this correction?
+}
+
 template<typename T>
-void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
+void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 		const Matrix1D<T>& bX, const Matrix1D<T>& bY,
 		const Matrix2D<T>& A) {
 
@@ -1049,10 +1065,15 @@ void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 			croppedOptSizeFFTX, croppedOptSizeX, croppedOptSizeY, correlationBufferImgs,
 			croppedOptBatchSize, correlations);
 
-	int resultSize = this->maxShift*2+1;
-	Image<T> tmp(resultSize, resultSize, 1, N);
+	int resultSize =this->maxShift*2+1;
+	Image<T> tmp(resultSize, resultSize, 1, (N*(N-1)/2));
 	tmp.data.data = correlations;
 	tmp.write("correlationsGPU.vol");
+
+	// since we are using different size of FFT, we need to scale results to
+	// 'expected' size
+	T localSizeFactor = this->sizeFactor /
+			(croppedOptSizeX / (T)inputOptSizeX); // assuming using square images
 
 	int idx = 0;
 	MultidimArray<T> Mcorr (resultSize, resultSize);
@@ -1061,11 +1082,15 @@ void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 			size_t offset = idx * resultSize * resultSize;
 			Mcorr.data = correlations + offset;
 			Mcorr.setXmippOrigin();
+//			findMax(Mcorr, bX(idx), bY(idx));
 			bestShift(Mcorr, bX(idx), bY(idx), NULL, this->maxShift);
+			std::cerr <<  bX(idx) << "," << bY(idx) << " ";
+			bX(idx) *= localSizeFactor; // scale to expected size
+			bY(idx) *= localSizeFactor;
 			if (this->verbose)
 				std::cerr << "Frame " << i + this->nfirst << " to Frame "
-						<< j + this->nfirst << " -> (" << bX(idx) << "," << bY(idx)
-						<< ")\n";
+						<< j + this->nfirst << " -> (" << bX(idx) / this->sizeFactor << "," << bY(idx) / this->sizeFactor
+						<< ") " << bX(idx) << "," << bY(idx) << std::endl;
 			for (int ij = i; ij < j; ij++)
 				A(idx, ij) = 1;
 

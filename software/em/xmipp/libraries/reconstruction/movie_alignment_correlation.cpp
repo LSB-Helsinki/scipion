@@ -127,7 +127,8 @@ void ProgMovieAlignmentCorrelation<T>::computeShifts(size_t N,
 					bY(idx), aux, NULL, this->maxShift);
 			if (this->verbose)
 				std::cerr << "Frame " << i + this->nfirst << " to Frame "
-						<< j + this->nfirst << " -> (" << bX(idx) << "," << bY(idx)
+						<< j + this->nfirst << " -> (" << bX(idx) / this->sizeFactor
+						<< "," << bY(idx) / this->sizeFactor
 						<< ")\n";
 			for (int ij = i; ij < j; ij++)
 				A(idx, ij) = 1;
