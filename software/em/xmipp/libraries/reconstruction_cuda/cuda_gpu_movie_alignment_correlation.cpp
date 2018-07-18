@@ -9,43 +9,96 @@
 #define BLOCK_DIM_X 32
 #define TILE 8
 
-template<typename T, typename U>
+template<typename T, typename U, bool applyFilter, bool normalize, bool center>
 __global__
-void applyFilterAndCropKernel(const T* __restrict__ src, T* __restrict__ dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
-		const U* __restrict__ filter) {
+void scaleFFTKernel(const T* __restrict__ src, T* __restrict__ dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
+		const U* __restrict__ filter, U normFactor) {
 	// assign pixel to thread
 	int idx = blockIdx.x*blockDim.x + threadIdx.x;
 	int idy = blockIdx.y*blockDim.y + threadIdx.y;
 
 	if (idx >= newX || idy >= newY ) return;
 	size_t fIndex = idy*newX + idx; // index within single image
-	U lpfw = (NULL == filter) ? 1.f : filter[fIndex];
+	U filterCoef = filter[fIndex];
+	U centerCoef = 1-2*((idx+idy)&1); // center FFT, input must have be even
 	int yhalf = newY/2;
 
 	size_t origY = (idy <= yhalf) ? idy : (oldY - (newY-idy)); // take top N/2+1 and bottom N/2 lines
 	for (int n = 0; n < noOfImages; n++) {
 		size_t iIndex = n*oldX*oldY + origY*oldX + idx; // index within consecutive images
 		size_t oIndex = n*newX*newY + fIndex; // index within consecutive images
-		dest[oIndex] = src[iIndex] * lpfw;
+		dest[oIndex] = src[iIndex];
+		if (applyFilter) {
+			dest[oIndex] *= filterCoef;
+		}
+		if (normalize) {
+			dest[oIndex] *= normFactor;
+		}
+		if (center) {
+			dest[oIndex] *= centerCoef;
+		}
 	}
+}
+
+void scaleFFT2D(dim3& dimGrid, dim3& dimBlock, const std::complex<float>* d_inFFT, std::complex<float>* d_outFFT, int noOfFFT, size_t inFFTX, size_t inFFTY, size_t outFFTX, size_t outFFTY,
+		float* d_filter, float normFactor, bool center) {
+	if (NULL == d_filter) {
+		if ((float)1 == normFactor) {
+			if (center) {
+				scaleFFTKernel<float2, float, false, false, true>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, NULL, 1.f);
+			} else {
+				scaleFFTKernel<float2, float, false, false, false>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, NULL, 1.f);
+			}
+		} else { // normalize
+			if (center) {
+				scaleFFTKernel<float2, float, false, true, true>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, NULL, normFactor);
+			} else {
+				scaleFFTKernel<float2, float, false, true, false>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, NULL, normFactor);
+			}
+		}
+	} else { // apply filter (on output)
+		if ((float)1 == normFactor) {
+			if (center) {
+				scaleFFTKernel<float2, float, true, false, true>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, d_filter, 1.f);
+			} else {
+				scaleFFTKernel<float2, float, true, false, false>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, d_filter, 1.f);
+			}
+		} else { // normalize
+			if (center) {
+				scaleFFTKernel<float2, float, true, true, true>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, d_filter, normFactor);
+			} else {
+				scaleFFTKernel<float2, float, true, true, false>
+					<<<dimGrid, dimBlock>>>((float2*)d_inFFT, (float2*)d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY, d_filter, normFactor);
+			}
+		}
+	}
+	gpuErrchk(cudaPeekAtLastError());
 }
 
 template void applyFilterAndCrop<float>(const std::complex<float>* src, std::complex<float>* dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
 		float* filter);
 
 template<typename T>
-void applyFilterAndCrop(const std::complex<T>* src, std::complex<T>* dest, int noOfImages, size_t oldX, size_t oldY, size_t newX, size_t newY,
-		T* filter) {
-	void* d_src = loadToGPU(src, oldX * oldY);
-	void* d_dest = loadToGPU(dest, newX * newY);
-	void* d_filter = filter ? loadToGPU(dest, newX * newY) : NULL;
+void applyFilterAndCrop(const std::complex<T>* h_inFFT, std::complex<T>* h_outFFT, int noOfFFT, size_t inFFTX, size_t inFFTY, size_t outFFTX, size_t outFFTY,
+		T* h_filter) {
+	std::complex<T>* d_inFFT = loadToGPU(h_inFFT, inFFTX * inFFTY);
+	std::complex<T>* d_outFFT = loadToGPU(h_outFFT, outFFTX * outFFTY);
+	T* d_filter = h_filter ? loadToGPU(h_filter, outFFTX * outFFTY) : NULL;
 	dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
-	dim3 dimGrid(ceil(newX/(float)dimBlock.x), ceil(newY/(float)dimBlock.y));
-	applyFilterAndCropKernel<<<dimGrid, dimBlock>>>((float2*)d_src, (float2*)d_dest, noOfImages, oldX, oldY, newX, newY, (T*)d_filter);
+	dim3 dimGrid(ceil(outFFTX/(float)dimBlock.x), ceil(outFFTY/(float)dimBlock.y));
+	scaleFFT2D(dimGrid, dimBlock, d_inFFT, d_outFFT, noOfFFT, inFFTX, inFFTY, outFFTX, outFFTY,
+			d_filter, (T)1, false);
 	gpuErrchk(cudaPeekAtLastError());
-	gpuErrchk(cudaMemcpy((void*)dest, (void*)d_dest, sizeof(std::complex<T>) * newX * newY, cudaMemcpyDeviceToHost));
-	release(d_src);
-	release(d_dest);
+	gpuErrchk(cudaMemcpy((void*)h_outFFT, (void*)d_outFFT, sizeof(std::complex<T>) * outFFTX * outFFTY, cudaMemcpyDeviceToHost));
+	release(d_inFFT);
+	release(d_outFFT);
 	release(d_filter);
 }
 
@@ -141,13 +194,7 @@ void processInput(GpuMultidimArrayAtGpu<T>& imagesGPU,
 
 	dim3 dimBlock(BLOCK_DIM_X, BLOCK_DIM_X);
 	dim3 dimGrid(ceil(outSizeX/(float)dimBlock.x), ceil(outSizeY/(float)dimBlock.y));
-	if (std::is_same<T, float>::value) {
-		applyFilterAndCropKernel<<<dimGrid, dimBlock>>>((float2*)resultingFFT.d_data, (float2*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter);
-	} else if (std::is_same<T, double>::value) {
-		applyFilterAndCropKernel<<<dimGrid, dimBlock>>>((double2*)resultingFFT.d_data, (double2*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter);
-	} else {
-		throw std::logic_error("unsupported type");
-	}
+	scaleFFT2D(dimGrid, dimBlock, (std::complex<T>*)resultingFFT.d_data, (std::complex<T>*)imagesGPU.d_data, inBatch, resultingFFT.Xdim, resultingFFT.Ydim, outSizeX, outSizeY, d_filter, 1.f/imagesGPU.yxdim, false);
 	gpuErrchk( cudaPeekAtLastError() );
 
 	gpuErrchk(cudaMemcpy((void*)result, (void*)imagesGPU.d_data, bytes, cudaMemcpyDeviceToHost));
@@ -178,7 +225,6 @@ void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlat
 	for (int i = iStart; i <= iStop; i++) {
 		int tmpOffset = i * xDim * yDim;
 		double2 tmp = make_double2(in1[tmpOffset + pixelIndex].x, in1[tmpOffset + pixelIndex].y);
-		tmp /= (double)((size_t)yDim * yDim);
 		for (int j = isWithin ? i + 1 : 0; j < jSize; j++) {
 			if (!compute) {
 				compute = true;
@@ -188,7 +234,6 @@ void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlat
 			if (compute) {
 				int tmp2Offset = j * xDim * yDim;
 				double2 tmp2 = make_double2(in2[tmp2Offset + pixelIndex].x, in2[tmp2Offset + pixelIndex].y);
-				tmp2 /= (double)((size_t)yDim * yDim);
 				double2 res;
 				res.x = (tmp.x*tmp2.x) + (tmp.y*tmp2.y);
 				res.y = (tmp.y*tmp2.x) - (tmp.x*tmp2.y);
