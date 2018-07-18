@@ -112,7 +112,13 @@ std::complex<T>* performFFTAndScale(T* inOutData, int noOfImgs,
 	mycufftHandle handle;
 	int counter = 0;
 	std::complex<T>* h_result = (std::complex<T>*)inOutData;
-	GpuMultidimArrayAtGpu<T> imagesGPU(inSizeX, inSizeY, 1, inBatch);
+	// since memory where the input images will be reused, we have to make
+	// sure it's big enough
+	size_t bytesImgs = inSizeX * inSizeY * inBatch * sizeof(T);
+	size_t bytesFFTs = outSizeX * outSizeY * inBatch * sizeof(T) * 2; // complex
+	T* d_data = NULL;
+	gpuErrchk(cudaMalloc(&d_data, std::max(bytesImgs, bytesFFTs)));
+	GpuMultidimArrayAtGpu<T> imagesGPU(inSizeX, inSizeY, 1, inBatch, d_data);
 	GpuMultidimArrayAtGpu<std::complex<T> > resultingFFT;
 
 	while (counter < noOfImgs) {
@@ -162,7 +168,7 @@ template<typename T>
 T* loadToGPU(const T* data, size_t items) {
 	T* d_data;
 	size_t bytes = items * sizeof(T);
-	gpuMalloc((void**) &d_data,bytes);
+	gpuErrchk(cudaMalloc(&d_data, bytes));
 	gpuErrchk(cudaMemcpy(d_data, data, bytes, cudaMemcpyHostToDevice));
 	return d_data;
 }

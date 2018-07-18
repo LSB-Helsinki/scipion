@@ -137,7 +137,9 @@ int ProgMovieAlignmentCorrelationGPU<T>::getMaxFilterSize(Image<T> &frame) {
 template<typename T>
 T* ProgMovieAlignmentCorrelationGPU<T>::loadToRAM(const MetaData& movie, int noOfImgs,
 		const Image<T>& dark, const Image<T>& gain, bool cropInput) {
-	T* imgs = new T[noOfImgs * inputOptSizeX * inputOptSizeY]();
+	// allocate enough memory for the images. Since it will be reused, it has to be big
+	// enough to store either all FFTs or all input images
+	T* imgs = new T[noOfImgs * inputOptSizeY * std::max(inputOptSizeX, inputOptSizeFFTX * 2)]();
 	Image<T> frame, gainF, darkF;
 	// copy image correction data, convert to float
 	gainF.data.resize(gain(), true);
