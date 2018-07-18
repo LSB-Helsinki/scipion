@@ -224,7 +224,7 @@ void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlat
 	int counter = 0;
 	for (int i = iStart; i <= iStop; i++) {
 		int tmpOffset = i * xDim * yDim;
-		double2 tmp = make_double2(in1[tmpOffset + pixelIndex].x, in1[tmpOffset + pixelIndex].y);
+		T tmp = in1[tmpOffset + pixelIndex];
 		for (int j = isWithin ? i + 1 : 0; j < jSize; j++) {
 			if (!compute) {
 				compute = true;
@@ -233,11 +233,11 @@ void correlate(const T* __restrict__ in1, const T* __restrict__ in2, T* correlat
 			}
 			if (compute) {
 				int tmp2Offset = j * xDim * yDim;
-				double2 tmp2 = make_double2(in2[tmp2Offset + pixelIndex].x, in2[tmp2Offset + pixelIndex].y);
-				double2 res;
+				T tmp2 = in2[tmp2Offset + pixelIndex];
+				T res;
 				res.x = (tmp.x*tmp2.x) + (tmp.y*tmp2.y);
 				res.y = (tmp.y*tmp2.x) - (tmp.x*tmp2.y);
-				correlations[counter*xDim*yDim + pixelIndex] = make_float2(res.x*a, res.y*a);
+				correlations[counter*xDim*yDim + pixelIndex] = res * a;
 				counter++;
 			}
 			if ((iStop == i) && (jStop == j)) {

@@ -1018,45 +1018,11 @@ void ProgMovieAlignmentCorrelationGPU<T>::loadData(const MetaData& movie,
 	T* imgs = loadToRAM(movie, noOfImgs, dark, gain, cropInput);
 	data = performFFTAndScale(imgs, noOfImgs, inputOptSizeX, inputOptSizeY, inputOptBatchSize, croppedOptSizeFFTX, croppedOptSizeY, d_filter);
 
-	Image<T> tmp(croppedOptSizeFFTX, croppedOptSizeY, 1, noOfImgs);
-	size_t pixels = croppedOptSizeFFTX *croppedOptSizeY * noOfImgs;
-	T* tmp1 = new T[pixels]();
-	T normFactor = inputOptSizeX * inputOptSizeY;
-
-	for (size_t i = -0; i < pixels; i++) {
-		T val = data[i].imag() / normFactor;
-		if (val < 3) {
-			tmp1[i] = val;
-		}
-	}
-	tmp.data.data = tmp1;
-	tmp.write("fftFromGPU.vol");
-
-	Image<T> tmp2(croppedOptSizeFFTX, croppedOptSizeY);
-	tmp2.data = filter;
-	tmp2.write("filterGPU.vol");
-
 	release(d_filter);
 }
 
-void __attribute__((optimize("O0"))) findMax(MultidimArray<float> &Mcorr, float &posX, float &posY ) {
-	float max = std::numeric_limits<float>::min();
-	for (int y = STARTINGY(Mcorr); y < FINISHINGY(Mcorr); ++y) {
-		for (int x = STARTINGX(Mcorr); x < FINISHINGX(Mcorr); ++x) {
-			float val = A2D_ELEM(Mcorr, y, x);
-			if (val > max) {
-				posX = x;
-				posY = y;
-				max = val;
-			}
-		}
-	}
-//	posX+=2;
-//	posY+=2; // FIXME why this correction?
-}
-
 template<typename T>
-void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
+void ProgMovieAlignmentCorrelationGPU<T>::computeShifts(size_t N,
 		const Matrix1D<T>& bX, const Matrix1D<T>& bY,
 		const Matrix2D<T>& A) {
 
@@ -1066,10 +1032,6 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::comput
 			croppedOptBatchSize, correlations);
 
 	int resultSize =this->maxShift*2+1;
-	Image<T> tmp(resultSize, resultSize, 1, (N*(N-1)/2));
-	tmp.data.data = correlations;
-	tmp.write("correlationsGPU.vol");
-
 	// since we are using different size of FFT, we need to scale results to
 	// 'expected' size
 	T localSizeFactor = this->sizeFactor /
@@ -1082,15 +1044,13 @@ void __attribute__((optimize("O0"))) ProgMovieAlignmentCorrelationGPU<T>::comput
 			size_t offset = idx * resultSize * resultSize;
 			Mcorr.data = correlations + offset;
 			Mcorr.setXmippOrigin();
-//			findMax(Mcorr, bX(idx), bY(idx));
 			bestShift(Mcorr, bX(idx), bY(idx), NULL, this->maxShift);
-			std::cerr <<  bX(idx) << "," << bY(idx) << " ";
 			bX(idx) *= localSizeFactor; // scale to expected size
 			bY(idx) *= localSizeFactor;
 			if (this->verbose)
 				std::cerr << "Frame " << i + this->nfirst << " to Frame "
 						<< j + this->nfirst << " -> (" << bX(idx) / this->sizeFactor << "," << bY(idx) / this->sizeFactor
-						<< ") " << bX(idx) << "," << bY(idx) << std::endl;
+						<< ")" << std::endl;
 			for (int ij = i; ij < j; ij++)
 				A(idx, ij) = 1;
 
