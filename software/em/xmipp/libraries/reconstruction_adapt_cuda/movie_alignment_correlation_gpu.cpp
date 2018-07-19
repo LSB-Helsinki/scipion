@@ -38,6 +38,11 @@ void ProgMovieAlignmentCorrelationGPU<T>::applyShiftsComputeAverage(
 	int n = 0;
 	Ninitial = N = 0;
 	GeoTransformer<T> transformer;
+
+
+	transformer.test(); // FIXME remove
+
+
 	FOR_ALL_OBJECTS_IN_METADATA(movie)
 	{
 		if (n >= this->nfirstSum && n <= this->nlastSum) {

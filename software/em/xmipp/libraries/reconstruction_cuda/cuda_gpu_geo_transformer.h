@@ -3,6 +3,7 @@
 #include <exception>
 #include "data/multidim_array.h"
 #include "data/transformations.h"
+#include "bilib/headers/iirconvolve.h" // for tests only
 
 template<typename T>
 class GeoTransformer {
@@ -46,6 +47,10 @@ private:
 	template<typename T_IN>
 	void loadInput(const MultidimArray<T_IN> &input);
 
+	void produceCoefficients(int SplineDegree,
+	        MultidimArray<T> &coeffs,
+	        const MultidimArray<T> &input);
+
 	void applyGeometry_2D_wrap(int SplineDegree);
 
 	template<typename T_IN>
@@ -55,6 +60,12 @@ private:
 	void prepareAndLoadTransform(const Matrix2D<T_MAT> &transform, bool isInv);
 
 	void test(const Matrix2D<T> &transform);
+
+	void testCoeffs();
+
+	void testTranspose();
+
+	void testCoeffsRow();
 
 private:
 	bool isReady;
