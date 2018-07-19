@@ -93,7 +93,6 @@ public:
     void run();
 
 public:
-    CDF cdfS;
     MultidimArray<double> Vorig;//, VsoftMask;
     MultidimArray<int> mask;
     MultidimArray<double> resVol;
@@ -101,7 +100,6 @@ public:
 	MultidimArray< std::complex<double> > fftV, fftVfilter; // Fourier transform of the input volume
 	FourierTransformer transformer, transformer_inv;
 	FourierFilter FilterBand;
-	Image<double> Vfiltered, VresolutionFiltered;
 };
 //@}
 #endif

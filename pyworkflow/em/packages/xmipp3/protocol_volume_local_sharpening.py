@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # **************************************************************************
 # *
-# * Authors:     Erney Ramirez Aportela (eramirez@cnb.csic.es)
+#* Authors:    Erney Ramirez-Aportela,                                    eramirez@cnb.csic.es
+# *             Jose Luis Vilas,                                           jlvilas@cnb.csic.es
 # *
 # * Unidad de  Bioinformatica of Centro Nacional de Biotecnologia , CSIC
 # *
@@ -38,6 +39,8 @@ import pyworkflow.em.metadata as md
 from pyworkflow.em.metadata.constants import (MDL_COST, MDL_ITER, MDL_SCALE)
 from ntpath import dirname
 
+LOCALDEBLUR_METHOD_URL= 'http://github.com/I2PC/scipion/wiki/XmippProtLocSharp'
+
 CHIMERA_RESOLUTION_VOL = 'MG_Chimera_resolution.vol'
 BINARY_MASK = 'binaryMask.vol'
 OUTPUT_RESOLUTION_FILE = 'resolutionMonoRes.vol'
@@ -50,7 +53,7 @@ class XmippProtLocSharp(ProtAnalysis3D):
     """    
     Given a resolution map the protocol calculate the sharpened map.
     """
-    _label = 'local Sharpening'
+    _label = 'localdeblur sharpening'
     _lastUpdateVersion = VERSION_1_1
     
     def __init__(self, **args):
@@ -58,11 +61,7 @@ class XmippProtLocSharp(ProtAnalysis3D):
     
     # --------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
-        form.addSection(label='Input')
-
-        form.addParam('sharpSplitVolumes', BooleanParam, default=False,
-                      label="Sharpening for half volumes?",
-                      help='In addition to the main volume it makes sharpening for half volumes.')         
+        form.addSection(label='Input')      
         
         form.addParam('inputVolume', PointerParam, pointerClass='Volume',
                       label="Input Map", important=True,
@@ -71,16 +70,13 @@ class XmippProtLocSharp(ProtAnalysis3D):
         form.addParam('resolutionVolume', PointerParam, pointerClass='Volume',
                       label="Resolution Map", important=True,
                       help='Select a local resolution map.')
-
-        form.addParam('iterations', IntParam, default=100, 
-                      expertLevel=LEVEL_ADVANCED,
-                      label="Iterations",
-                      help='Number of iterations.')
                 
         form.addParam('const', FloatParam, default=1, 
                       expertLevel=LEVEL_ADVANCED,
                       label="lambda",
-                      help='Regularization Param.')
+                      help='Regularization Param.' 
+                        'The software determines this parameter automatically.'
+                         'However, if the user wishes it can be modified')
         
         form.addParallelSection(threads = 4, mpi = 0)
   
@@ -106,16 +102,7 @@ class XmippProtLocSharp(ProtAnalysis3D):
         if (extVol == '.mrc') or (extVol == '.map'):
             self.volFn = self.volFn + ':mrc'
         if (extRes == '.mrc') or (extRes == '.map'):
-            self.resFn = self.resFn + ':mrc'
-            
-        if self.sharpSplitVolumes.get() is True:
-             self.vol1Fn, self.vol2Fn = self.inputMap.get().getHalfMaps()
-             extVol1 = getExt(self.vol1Fn)
-             extVol2 = getExt(self.vol2Fn)   
-             if (extVol1 == '.mrc') or (extVol1 == '.map'):
-                 self.vol1Fn = self.vol1Fn + ':mrc'    
-             if (extVol2 == '.mrc') or (extVol2 == '.map'):
-                 self.vol2Fn = self.vol2Fn + ':mrc'       
+            self.resFn = self.resFn + ':mrc'     
     
     
     def createMaskStep(self):
@@ -178,7 +165,6 @@ class XmippProtLocSharp(ProtAnalysis3D):
                                                    OUTPUT_RESOLUTION_FILE)
             
         params += ' --sampling %f' % sampling
-        params += ' -i %i' % self.iterations
         params += ' -n %i' %  self.numberOfThreads.get()   
         params += ' --md %s' % self._getTmpPath(METADATA_PARAMS_SHARPENING)  
         if (iter == 1 and self.const!=1):
@@ -196,13 +182,6 @@ class XmippProtLocSharp(ProtAnalysis3D):
                     %(self._getExtraPath('sharpenedMap_'+str(iter)+'.mrc')), params)
         self.runJob("xmipp_image_header -i %s -s %f"
                     %(self._getExtraPath('sharpenedMap_'+str(iter)+'.mrc'), sampling), "")
-        
-        
-        if self.sharpSplitVolumes:
-             self.runJob("xmipp_volume_local_sharpening  --vol %s  -o %s"
-                    %(self.vol1Fn, self._getExtraPath('sharpenedMap_Half1.vol')), params) 
-             self.runJob("xmipp_volume_local_sharpening  --vol %s  -o %s"
-                    %(self.vol2Fn, self._getExtraPath('sharpenedMap_Half2.vol')), params) 
 
 
     def sharpeningAndMonoResStep(self):
@@ -212,7 +191,8 @@ class XmippProtLocSharp(ProtAnalysis3D):
         iteration = 0
         while nextIter is True:
             iteration = iteration + 1
-            print iteration
+            #print iteration
+            print ("Iteration  %s"  % (iteration))
             self.sharpenStep(iteration)           
             mtd = md.MetaData()
             mtd.read(self._getTmpPath(METADATA_PARAMS_SHARPENING))
@@ -256,14 +236,7 @@ class XmippProtLocSharp(ProtAnalysis3D):
         volume.setSamplingRate(self.inputVolume.get().getSamplingRate())
 
         self._defineOutputs(sharpened_map=volume)
-        self._defineSourceRelation(self.inputVolume, volume)
-        
-        if self.sharpSplitVolumes:
-            half1 = self._getExtraPath('sharpenedMap_Half1.vol')
-            half2 = self._getExtraPath('sharpenedMap_Half2.vol')
-            vol.setHalfMaps([half1, half2])   
-            self._defineOutputs(outputVol=volume)
-            self._defineSourceRelation(self.inputVolume, vol)             
+        self._defineSourceRelation(self.inputVolume, volume)          
             
     # --------------------------- INFO functions ------------------------------
 
@@ -276,7 +249,7 @@ class XmippProtLocSharp(ProtAnalysis3D):
     
     def _summary(self):
         summary = []
-        summary.append("LocalDeblurMap")
+        summary.append("LocalDeblur Map")
         return summary
 
     def _citations(self):
