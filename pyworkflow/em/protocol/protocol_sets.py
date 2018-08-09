@@ -321,7 +321,7 @@ class ProtSplitSet(ProtSets):
                       label="Randomize elements",
                       help='Put the elements at random in the different '
                            'subsets.')
-    
+
     # -------------------------- INSERT steps functions -----------------------
     def _insertAllSteps(self):
         self._insertFunctionStep('createOutputStep')
