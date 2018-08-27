@@ -14,7 +14,7 @@ from os.path import basename
 from pyrelion import MetaData
 import pyworkflow.utils as pwutils
 from pyworkflow.utils.path import moveTree
-from pyworkflow.em.transformations import vector_norm, unit_vector
+from pyworkflow.em.transformations import vector_norm, unit_vector, euler_matrix
 
 
 class Vector3:
@@ -33,6 +33,19 @@ class Vector3:
 
     def compute_unit_vector(self):
         self.set_vector(unit_vector(self.vector))
+
+    def compute_matrix(self):
+        """ Compute rotation matrix to align Z axis to this vector. """
+        if abs(self.vector[0]) < 0.00001 and abs(self.vector[1]) < 0.00001:
+            rot = np.radians(0.00)
+            tilt = np.radians(0.00)
+        else:
+            rot = np.atan2(self.vector[1], self.vector[0])
+            tilt = np.arccos(self.vector[2])
+
+        psi = 0
+        self._matrix = euler_matrix(rot, tilt, psi)
+
 
 
 def load_vectors(cmm_file, vectors_str, distances_str, angpix):
