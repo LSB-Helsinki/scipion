@@ -14,7 +14,8 @@ from os.path import basename
 from pyrelion import MetaData
 import pyworkflow.utils as pwutils
 from pyworkflow.utils.path import moveTree
-from pyworkflow.em.transformations import vector_norm, unit_vector, euler_matrix
+from pyworkflow.em.transformations import vector_norm, unit_vector, euler_matrix, \
+    euler_from_matrix
 
 
 class Vector3:
@@ -45,6 +46,9 @@ class Vector3:
 
         psi = 0
         self._matrix = euler_matrix(rot, tilt, psi)
+    def print_vector(self):
+        print("[%.3f,%.3f,%.3f]"%(self.vector[0], self.vector[1],
+                                  self.vector[2]))
 
 
 
@@ -165,6 +169,7 @@ def load_filters(side, top, mindist):
         filters.append(lambda x, y: filter_mindist(x, y, mindist))
 
     return filters
+
 def filter_unique(subparticles, subpart, unique):
     """ Return True if subpart is not close to any other subparticle
         by unique (angular distance).
@@ -230,17 +235,13 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
     part_filename = splitext(basename(particle.rlnImageName))[0]
 
 
-
-    # We convert the particle angles to radian for further computations
-    angles_to_radians(particle)
-
     # Euler angles that take particle to the orientation of the model
 
-    rot = particle.rlnAngleRot
-    tilt = particle.rlnAngleTilt
-    psi = particle.rlnAnglePsi
+    rot = particle.rlnAngleRot = np.radians(particle.rlnAngleRot)
+    tilt = particle.rlnAngleTilt = np.radians(particle.rlnAngleTilt)
+    psi = particle.rlnAnglePsi = np.radians(particle.rlnAnglePsi)
 
-    matrix_particle = matrix_from_euler(rot, tilt, psi)
+    matrix_particle = euler_matrix(rot, tilt, psi)
 
     subparticles = []
     subtracted = []
@@ -263,7 +264,8 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
 
             subpart = particle.clone()
 
-            m = matrix_multiply(matrix_particle, (matrix_multiply(matrix_transpose(symmetry_matrix), matrix_transpose(matrix_from_subparticle_vector))))
+            m = np.matmul(matrix_particle, (np.matmul(symmetry_matrix.transpose(),
+                                                      matrix_from_subparticle_vector.transpose())))
 
             if align_subparticles:
                 rotNew, tiltNew, psiNew = euler_from_matrix(m)
