@@ -151,6 +151,7 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
         setEnviron() # Set the environment to access localrec modules
         import localrec
         import pyrelion
+        import Opicutils
         # return
         inputSet = self._getInputParticles()
         outputSet = self._createSetOfCoordinates(inputSet)
@@ -178,7 +179,10 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
         subpartVectorList = localrec.load_vectors(cmmFn, vector,
                                                   params["length"],
                                                   params["pxSize"])
-        
+        subpartVectorList2 = Opicutils.load_vectors(cmmFn, vector,
+                                                  params["length"],
+                                                  params["pxSize"])
+
         # Define some conditions to filter subparticles
         filters = localrec.load_filters(math.radians(params["side"]),
                                         math.radians(params["top"]),

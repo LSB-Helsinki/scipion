@@ -1,36 +1,32 @@
 import math
-import sys
 import random
 import numpy as np
 from itertools import izip
-from glob import glob
+import xml.etree.ElementTree
 
-from matrix3 import *
-from vector3 import *
-from euler import *
 from os.path import splitext
 from os.path import basename
 
-from pyrelion import MetaData
-import pyworkflow.utils as pwutils
-from pyworkflow.utils.path import moveTree
 from pyworkflow.em.transformations import vector_norm, unit_vector, euler_matrix, \
     euler_from_matrix
 
 
 class Vector3:
     def __init__(self):
-        self.vector = np.empty(3, dtype=float)
+        self.vector = np.empty((3,), dtype=float)
         self.length = 0
 
     def set_vector(self, v):
         self.vector = np.array(v)
 
+    def get_length(self):
+        return self.length
+
     def set_length(self, d):
         self.length = float(d)
 
     def compute_length(self):
-        self.set_vector(vector_norm(self.vector))
+        self.set_length(vector_norm(self.vector))
 
     def compute_unit_vector(self):
         self.set_vector(unit_vector(self.vector))
@@ -41,14 +37,15 @@ class Vector3:
             rot = np.radians(0.00)
             tilt = np.radians(0.00)
         else:
-            rot = np.atan2(self.vector[1], self.vector[0])
-            tilt = np.arccos(self.vector[2])
+            rot = math.atan2(self.vector[1], self.vector[0])
+            tilt = math.acos(self.vector[2])
 
         psi = 0
         self._matrix = euler_matrix(rot, tilt, psi)
+
     def print_vector(self):
-        print("[%.3f,%.3f,%.3f]"%(self.vector[0], self.vector[1],
-                                  self.vector[2]))
+        print(self.vector[2])
+        print("[%.3f,%.3f,%.3f]"%(self.vector[0], self.vector[1], self.vector[2])),
 
 
 
@@ -85,11 +82,11 @@ def load_vectors(cmm_file, vectors_str, distances_str, angpix):
 
     for subparticle_vector in subparticle_vector_list:
         print "Vector: ",
-        subparticle_vector.normalize()
+        subparticle_vector.compute_unit_vector()
         subparticle_vector.compute_matrix()
         subparticle_vector.print_vector()
         print ""
-        print "Length: %.2f pixels" % subparticle_vector.distance()
+        print "Length: %.2f pixels" % subparticle_vector.get_length()
     print ""
 
     return subparticle_vector_list
@@ -99,41 +96,26 @@ def vectors_from_cmm(input_cmm, angpix):
 
     # coordinates in the CMM file need to be in Angstrom
 
-    file_cmm = open(input_cmm, "r")
     vector_list = []
-    counter=0
+    e = xml.etree.ElementTree.parse(input_cmm).getroot()
 
-    for line in file_cmm.readlines():
-        if 'marker id=' in line:
-            line_values=line.split()
-            for i in range(len(line_values)):
-                if 'x=' in line_values[i]:
-                    a = re.search('"(.*)"', line_values[i]).group(0)
-                    x = float(a.translate(None, '""'))/angpix
-                if 'y=' in line_values[i]:
-                    b = re.search('"(.*)"', line_values[i]).group(0)
-                    y = float(b.translate(None, '""'))/angpix
-                if 'z=' in line_values[i]:
-                    c = re.search('"(.*)"', line_values[i]).group(0)
-                    z = float(c.translate(None, '""'))/angpix
-
-            if counter != 0:
-                vector = Vector3()
-                x = x - x0
-                y = y - y0
-                z = z - z0
-                vector.set_vector([x,y,z])
-                vector_list.append(vector)
-                counter = counter + 1
-                continue
-            else:
-                x0 = x
-                y0 = y
-                z0 = z
-                counter = counter + 1
-                continue
+    for marker in e.findall('marker'):
+        x = float(marker.get('x'))/angpix
+        y = float(marker.get('y'))/angpix
+        z = float(marker.get('z'))/angpix
+        id = int(marker.get('id'))
+        if id != 1:
+            vector = Vector3()
+            x = x - x0
+            y = y - y0
+            z = z - z0
+            vector.set_vector([x,y,z])
+            vector.print_vector()
+            vector_list.append(vector)
         else:
-             continue
+            x0 = x
+            y0 = y
+            z0 = z
 
     return vector_list
 
@@ -270,7 +252,7 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
             if align_subparticles:
                 rotNew, tiltNew, psiNew = euler_from_matrix(m)
             else:
-                m2 = matrix_multiply(matrix_particle, matrix_transpose(symmetry_matrix))
+                m2 = np.matmul(matrix_particle, symmetry_matrix.transpose())
                 rotNew, tiltNew, psiNew = euler_from_matrix(m2)
 
             # save Euler angles that take the model to the orientation of the subparticle
@@ -281,7 +263,7 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
             subpart.symmat = symmetry_matrix
 
             # subparticle origin
-            d = subparticle_vector.distance()
+            d = subparticle_vector.get_length()
             x = -m.m[0][2] * d + particle.rlnOriginX
             y = -m.m[1][2] * d + particle.rlnOriginY
             z = -m.m[2][2] * d
