@@ -176,15 +176,11 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
             cmmFn = ""
             vector = params["vector"]
         
-        subpartVectorList = localrec.load_vectors(cmmFn, vector,
+        subpartVectorList = Opicutils.load_vectors(cmmFn, vector,
                                                   params["length"],
                                                   params["pxSize"])
-        subpartVectorList2 = Opicutils.load_vectors(cmmFn, vector,
-                                                  params["length"],
-                                                  params["pxSize"])
-
-        # Define some conditions to filter subparticles
-        filters = localrec.load_filters(math.radians(params["side"]),
+         # Define some conditions to filter subparticles
+        filters = Opicutils.load_filters(math.radians(params["side"]),
                                         math.radians(params["top"]),
                                         params["mindist"])
         
@@ -193,7 +189,7 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
             partItem = pyrelion.Item()
             particleToRow(part, partItem)
             
-            subparticles = self.getSubparticles(localrec, partItem,
+            subparticles = self.getSubparticles(Opicutils, partItem,
                                                 symMatrices, params,
                                                 subpartVectorList, filters)
             for subpart in subparticles:
@@ -293,10 +289,10 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
 
         return str(maxCounter+1) if maxCounter > 0 else '' # empty if not outputs
     
-    def getSubparticles(self, localrec, partItem, symMatrices,
+    def getSubparticles(self, Opicutils, partItem, symMatrices,
                         params, subpartVectorList, filters):
         if getVersion() == '1.1.0':
-            subparticles, _ = localrec.create_subparticles(partItem,
+            subparticles, _ = Opicutils.create_subparticles(partItem,
                                                            symMatrices,
                                                            subpartVectorList,
                                                            params["dim"],
@@ -310,7 +306,7 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
                                                            True,
                                                            filters)
         else:
-            subparticles, _ = localrec.create_subparticles(partItem,
+            subparticles, _ = Opicutils.create_subparticles(partItem,
                                                            symMatrices,
                                                            subpartVectorList,
                                                            params["dim"],

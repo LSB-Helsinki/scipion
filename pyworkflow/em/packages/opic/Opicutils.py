@@ -9,18 +9,22 @@ from os.path import basename
 
 from pyworkflow.em.transformations import vector_norm, unit_vector, euler_matrix, \
     euler_from_matrix
+import xmipp
 
 
 class Vector3:
     def __init__(self):
         self.vector = np.empty((3,), dtype=float)
         self.length = 0
-
+        self.matrix = np.identity(4, dtype=float)
     def set_vector(self, v):
         self.vector = np.array(v)
 
     def get_length(self):
         return self.length
+
+    def get_matrix(self):
+        return self.matrix[0:3,0:3]
 
     def set_length(self, d):
         self.length = float(d)
@@ -34,20 +38,27 @@ class Vector3:
     def compute_matrix(self):
         """ Compute rotation matrix to align Z axis to this vector. """
         if abs(self.vector[0]) < 0.00001 and abs(self.vector[1]) < 0.00001:
-            rot = np.radians(0.00)
-            tilt = np.radians(0.00)
+            rot = math.radians(0.00)
+            tilt = math.radians(0.00)
         else:
             rot = math.atan2(self.vector[1], self.vector[0])
             tilt = math.acos(self.vector[2])
 
         psi = 0
-        self._matrix = euler_matrix(rot, tilt, psi)
+        self.matrix = euler_matrix(-rot, -tilt, -psi)
 
     def print_vector(self):
         print(self.vector[2])
-        print("[%.3f,%.3f,%.3f]"%(self.vector[0], self.vector[1], self.vector[2])),
+        print("[%.3f,%.3f,%.3f]"%(self.vector[0], self.vector[1], self.vector[2]))
 
 
+def getSymMatricesXmipp(symmetryGroup):
+    SL = xmipp.SymList()
+    return SL.getSymmetryMatrices(symmetryGroup)
+
+def add_suffix(filename, output='particles'):
+    return filename.replace('%s_' % output,
+                            '%s_subtracted_' % output)
 
 def load_vectors(cmm_file, vectors_str, distances_str, angpix):
     """ Load subparticle vectors either from Chimera CMM file or from
@@ -95,7 +106,6 @@ def vectors_from_cmm(input_cmm, angpix):
     """function that obtains the input vector from a cmm file"""
 
     # coordinates in the CMM file need to be in Angstrom
-
     vector_list = []
     e = xml.etree.ElementTree.parse(input_cmm).getroot()
 
@@ -133,6 +143,47 @@ def vectors_from_string(input_str):
         vectors.append(v)
 
     return vectors
+
+def within_mindist(p1, p2, mindist):
+    """ Returns True if two particles are closer to each other
+    than the given distance in the projection. """
+
+    x1 = p1.rlnCoordinateX
+    y1 = p1.rlnCoordinateY
+    x2 = p2.rlnCoordinateX
+    y2 = p2.rlnCoordinateY
+    distance_sqr = (x1 - x2) ** 2 + (y1 - y2) ** 2
+    mindist_sqr = mindist ** 2
+
+    return distance_sqr < mindist
+
+
+def vector_from_two_eulers(rot, tilt):
+    """function that obtains a vector from the first two Euler angles"""
+
+    x = math.sin(tilt)*math.cos(rot)
+    y = math.sin(tilt)*math.sin(rot)
+    z = math.cos(tilt)
+    return [x,y,z]
+
+def within_unique(p1, p2, unique):
+    """ Returns True if two particles are closer to each other
+    than the given angular distance. """
+
+    v1 = vector_from_two_eulers(p1.rlnAnglePsi, p1.rlnAngleTilt)
+    v2 = vector_from_two_eulers(p2.rlnAnglePsi, p2.rlnAngleTilt)
+
+    dp = np.inner(v1, v2) / (vector_norm(v1)) * (vector_norm(v2))
+
+    if dp < -1:
+        dp = -1.000
+
+    if dp > 1:
+        dp = 1.000
+
+    angle = math.acos(dp)
+
+    return angle <= math.radians(unique)
 
 def load_filters(side, top, mindist):
     """ Create some filters depending on the conditions imposed by the user.
@@ -181,9 +232,9 @@ def filter_side(subpart, side):
         rot = subpart.rlnAngleRot
         tilt = subpart.rlnAngleTilt
         psi = subpart.rlnAnglePsi
-        matrix_particle = matrix_from_euler(rot, tilt, psi)
-        matrix_particle.print_matrix()
-        subpart.symmat.print_matrix()
+        matrix_particle = euler_matrix(-rot, -tilt, -psi, 'szyz')[0:3,0:3]
+        print(matrix_particle)
+        print(subpart.symmat)
         print("\n")
     return tmp
 
@@ -219,11 +270,11 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
 
     # Euler angles that take particle to the orientation of the model
 
-    rot = particle.rlnAngleRot = np.radians(particle.rlnAngleRot)
-    tilt = particle.rlnAngleTilt = np.radians(particle.rlnAngleTilt)
-    psi = particle.rlnAnglePsi = np.radians(particle.rlnAnglePsi)
+    rot = particle.rlnAngleRot = math.radians(particle.rlnAngleRot)
+    tilt = particle.rlnAngleTilt = math.radians(particle.rlnAngleTilt)
+    psi = particle.rlnAnglePsi = math.radians(particle.rlnAnglePsi)
 
-    matrix_particle = euler_matrix(rot, tilt, psi)
+    matrix_particle = (euler_matrix(-rot, -tilt, -psi, axes='szyz'))[0:3, 0:3]
 
     subparticles = []
     subtracted = []
@@ -237,23 +288,23 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
         random.shuffle(symmetry_matrix_ids)
 
     for subparticle_vector in subparticle_vector_list:
-        matrix_from_subparticle_vector = subparticle_vector.matrix()
+        matrix_from_subparticle_vector = subparticle_vector.get_matrix()
 
         for symmetry_matrix_id in symmetry_matrix_ids:
             # symmetry_matrix_id can be later written out to find out
             # which symmetry matrix created this subparticle
-            symmetry_matrix = symmetry_matrices[symmetry_matrix_id - 1]
+            symmetry_matrix = np.array(symmetry_matrices[symmetry_matrix_id - 1].m)
 
             subpart = particle.clone()
 
             m = np.matmul(matrix_particle, (np.matmul(symmetry_matrix.transpose(),
-                                                      matrix_from_subparticle_vector.transpose())))
+                                            matrix_from_subparticle_vector.transpose())))
 
             if align_subparticles:
-                rotNew, tiltNew, psiNew = euler_from_matrix(m)
+                rotNew, tiltNew, psiNew = -1.0 * np.ones(3) * euler_from_matrix(m, 'szyz')
             else:
                 m2 = np.matmul(matrix_particle, symmetry_matrix.transpose())
-                rotNew, tiltNew, psiNew = euler_from_matrix(m2)
+                rotNew, tiltNew, psiNew = -1.0 * np.ones(3) * euler_from_matrix(m2, 'szyz')
 
             # save Euler angles that take the model to the orientation of the subparticle
 
@@ -264,9 +315,9 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
 
             # subparticle origin
             d = subparticle_vector.get_length()
-            x = -m.m[0][2] * d + particle.rlnOriginX
-            y = -m.m[1][2] * d + particle.rlnOriginY
-            z = -m.m[2][2] * d
+            x = -m[0,2] * d + particle.rlnOriginX
+            y = -m[1,2] * d + particle.rlnOriginY
+            z = -m[2,2] * d
 
             # modify the subparticle defocus paramaters by its z location
             if hasattr(particle, 'rlnDefocusU'):
@@ -296,20 +347,10 @@ def create_subparticles(particle, symmetry_matrices, subparticle_vector_list,
     if subtract_masked_map:
         subtracted = clone_subtracted_subparticles(subparticles, output)
 
-    # To preserve numbering, ALL sub-particles are written to STAR files before filtering
-    if do_create_star:
-        starfile = "%s/%s.star" % (output, part_filename)
-        create_star(subparticles, starfile)
-        if subtract_masked_map:
-            create_star(subtracted, add_suffix(starfile))
-
     if filters:
         subparticles = filter_subparticles(subparticles, filters)
 
         if subtract_masked_map:
             subtracted = clone_subtracted_subparticles(subparticles, output)
-    # print(len(subparticles))
-    # if unique >= 0:
-    #     subparticles = filter_unique_subparticles(subparticles, unique)
 
     return subparticles, subtracted
