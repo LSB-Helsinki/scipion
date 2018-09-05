@@ -159,7 +159,7 @@ class ProtLocalizedExtraction(ProtParticles):
         return errors
     
     def _citations(self):
-        return ['Serban2015']
+        return ['Ilca2015']
 
     def _summary(self):
         summary = []

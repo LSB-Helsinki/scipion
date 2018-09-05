@@ -28,14 +28,12 @@ This sub-package contains data and protocol classes
 wrapping Localized recontruction of subunits.
 """
 from bibtex import _bibtex # Load bibtex dict with references
+import os
 
 _logo = "opic_logo.png"
 LOCALREC_HOME = 'LOCALREC_HOME'
-RELION_HOME = 'RELION_HOME'
-TMP_RELION_HOME = 'TMP_RELION_HOME'
 LOCALREC_RELION_HOME = 'LOCALREC_RELION_HOME'
 
-from convert import *
 from protocol_localized import ProtLocalizedRecons
 from protocol_localized_extraction import ProtLocalizedExtraction
 

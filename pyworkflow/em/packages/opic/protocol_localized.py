@@ -24,20 +24,11 @@
 # *
 # *****************************************************************************
 
-import os
-import math
-
 from pyworkflow import VERSION_1_1
 from pyworkflow.protocol.params import (PointerParam, BooleanParam, StringParam,
                                         EnumParam, NumericRangeParam,
                                         PathParam, FloatParam, LEVEL_ADVANCED)
 from pyworkflow.em.protocol import ProtParticles, ProtParticlePicking
-from pyworkflow.em.data import Coordinate, SetOfCoordinates
-
-from convert import (particleToRow, rowToSubcoordinate, setEnviron,
-                     restituteRelionHome)
-
-from convert import getVersion, getRelionVersion
 
 CMM = 0
 HAND = 1
@@ -148,9 +139,6 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
     
     # -------------------------- STEPS functions -----------------------------
     def createOutputStep(self):
-        setEnviron() # Set the environment to access localrec modules
-        import localrec
-        import pyrelion
         import Opicutils
         # return
         inputSet = self._getInputParticles()
@@ -167,7 +155,7 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
                   "dim" : self.inputParticles.get().getXDim()
                   }
 
-        symMatrices = localrec.matrix_from_symmetry(self.symmetryGroup.get())
+        symMatrices = Opicutils.getSymMatricesXmipp(self.symmetryGroup.get())
 
         if self.defineVector == CMM:
             cmmFn = params["vectorFile"]
@@ -179,45 +167,36 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
         subpartVectorList = Opicutils.load_vectors(cmmFn, vector,
                                                   params["length"],
                                                   params["pxSize"])
-         # Define some conditions to filter subparticles
-        filters = Opicutils.load_filters(math.radians(params["side"]),
-                                        math.radians(params["top"]),
-                                        params["mindist"])
-        
-        coord = Coordinate()
+
         for part in inputSet:
-            partItem = pyrelion.Item()
-            particleToRow(part, partItem)
-            
-            subparticles = self.getSubparticles(Opicutils, partItem,
-                                                symMatrices, params,
-                                                subpartVectorList, filters)
+
+            subparticles = Opicutils.create_subparticles(part,
+                                                        symMatrices,
+                                                        subpartVectorList,
+                                                        params["dim"],
+                                                        self.randomize,
+                                                        params["unique"],
+                                                        params["mindist"],
+                                                        params["top"],
+                                                        params["side"],
+                                                        0,
+                                                        self.alignSubparticles)
+
             for subpart in subparticles:
-                rowToSubcoordinate(subpart, coord, part)
-                coord.setObjId(None) # Force to insert as a new item
+                coord = subpart.getCoordinate()
                 outputSet.append(coord)
                 if part.hasAttribute('_rlnRandomSubset'):
                     coord._subparticle.copyAttributes(part, '_rlnRandomSubset')
 
-        restituteRelionHome()
         self._defineOutputs(outputCoordinates=outputSet)
         self._defineSourceRelation(self.inputParticles, outputSet)
     
     # -------------------------- INFO functions --------------------------------
     def _validate(self):
-        errors = []
-        relionPath = os.environ['LOCALREC_RELION_HOME']
-        if getRelionVersion() != '1.4':
-            errors.append("Relion version must be 1.4. Please add "
-                          "LOCALREC_RELION_HOME = path/to/relion-1.4 into your "
-                          "config file.")
-        if not os.path.exists(relionPath):
-            errors.append("%s does not exists. Contact with your system manager"
-                          " to install relion-1.4 or relion-1.4f" % relionPath)
-        return errors
+       pass
     
     def _citations(self):
-        return ['Serban2015']
+        return ['Ilca2015']
 
     def _summary(self):
         summary = []
@@ -229,94 +208,6 @@ class ProtLocalizedRecons(ProtParticlePicking, ProtParticles):
     # -------------------------- UTILS functions ------------------------------
     def _getInputParticles(self):
         return self.getInputParticlesPointer().get()
-    
-    def _getSymMatrices(self):
-        pass
-        # matricesObjs = lr.matrix_from_symmetry(self.symmetryGroup.get())
-        # We implement the binding to remove the dependency with relion. When
-        # we test the new implementation (code below) and the results were
-        # different. THe nunmber of particles removed are diverge in dependency
-        # of how you obtain the symmetry matrices.
-        # There aren't any obvious bug in the matrices.
-        
-#         matricesObjs = []
-#         matrices = md.getSymmetryMatrices(self.symmetryGroup.get())
-#         for matrix in matrices:
-#             a = matrix[0]
-#             a.extend(matrix[1])
-#             a.extend(matrix[2])
-#             print "Cadena Xmipp: ", a
-#             matricesObjs.append(lr.Matrix3(a))
-#        return matricesObjs
 
     def getInputParticlesPointer(self):
         return self.inputParticles
-
-    def registerCoords(self, coordsDir):
-        """ This methods is usually inherited from all Pickers
-        and it is used from the Java picking GUI to register
-        a new SetOfCoordinates when the user click on +Particles button.
-        """
-        suffix = self.__getOutputSuffix()
-        outputName = self.OUTPUT_PREFIX + suffix
-
-        from pyworkflow.em.packages.opic.convert import readSetOfCoordinates
-        inputset = self._getInputParticles()
-        # micrographs are the input set if protocol is not finished
-        outputset = self._createSetOfCoordinates(inputset, suffix=suffix)
-        readSetOfCoordinates(coordsDir, self._getInputParticles(), outputset)
-        summary = self.getSummary(outputset)
-        outputset.setObjComment(summary)
-        outputs = {outputName: outputset}
-        self._defineOutputs(**outputs)
-        self._defineSourceRelation(self.getInputParticlesPointer(), outputset)
-        self._store()
-
-    def __getOutputSuffix(self):
-        """ Get the name to be used for a new output.
-        For example: outputCoordiantes7.
-        It should take into account previous outputs
-        and number with a higher value.
-        """
-        maxCounter = -1
-        for attrName, _ in self.iterOutputAttributes(SetOfCoordinates):
-            suffix = attrName.replace(self.OUTPUT_PREFIX, '')
-            try:
-                counter = int(suffix)
-            except:
-                counter = 1 # when there is not number assume 1
-            maxCounter = max(counter, maxCounter)
-
-        return str(maxCounter+1) if maxCounter > 0 else '' # empty if not outputs
-    
-    def getSubparticles(self, Opicutils, partItem, symMatrices,
-                        params, subpartVectorList, filters):
-        if getVersion() == '1.1.0':
-            subparticles, _ = Opicutils.create_subparticles(partItem,
-                                                           symMatrices,
-                                                           subpartVectorList,
-                                                           params["dim"],
-                                                           self.relaxSym,
-                                                           self.randomize,
-                                                           "subparticles",
-                                                           params["unique"],
-                                                           0,
-                                                           self.alignSubparticles,
-                                                           "",
-                                                           True,
-                                                           filters)
-        else:
-            subparticles, _ = Opicutils.create_subparticles(partItem,
-                                                           symMatrices,
-                                                           subpartVectorList,
-                                                           params["dim"],
-                                                           self.randomize,
-                                                           "subparticles",
-                                                           params["unique"],
-                                                           0,
-                                                           self.alignSubparticles,
-                                                           "",
-                                                           False,
-                                                           filters)
-
-        return subparticles
